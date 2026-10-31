@@ -1,11 +1,13 @@
 package com.byteharvest.mdreader.data.repository
 
 import androidx.room.withTransaction
+import com.byteharvest.mdreader.core.security.AuthState
 import com.byteharvest.mdreader.core.security.TokenStore
 import com.byteharvest.mdreader.data.local.AppDatabase
 import com.byteharvest.mdreader.data.local.BookmarkEntity
 import com.byteharvest.mdreader.data.local.CachedDocumentEntity
 import com.byteharvest.mdreader.data.local.HistoryEntity
+import com.byteharvest.mdreader.data.local.OfflineRepositoryItem
 import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.local.TreeEntryEntity
 import com.byteharvest.mdreader.data.remote.GitHubApi
@@ -14,6 +16,8 @@ import com.byteharvest.mdreader.data.remote.GitHubException
 import com.byteharvest.mdreader.data.remote.RepoDto
 import com.byteharvest.mdreader.data.remote.TreeDto
 import com.byteharvest.mdreader.domain.isMarkdownPath
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 data class SyncReport(
     val updatedDocs: Int = 0,
@@ -21,6 +25,17 @@ data class SyncReport(
     val removedFiles: Int = 0,
     val error: String? = null,
     val truncated: Boolean = false,
+)
+
+data class OfflineDownloadReport(val downloaded: Int, val alreadyCached: Int, val failed: Int)
+
+data class BookmarkBackup(
+    val owner: String,
+    val repoName: String,
+    val branch: String,
+    val path: String,
+    val title: String,
+    val createdAt: Long,
 )
 
 sealed interface DocLoad {
@@ -41,8 +56,13 @@ class AppRepository(
     private val tokens: TokenStore,
 ) {
     private val dao = db.dao()
+    private val _authState = MutableStateFlow(
+        tokens.load()?.let { AuthState(signedIn = true, username = tokens.username()) } ?: AuthState(signedIn = false)
+    )
+    val authState = _authState.asStateFlow()
 
     fun repositories() = dao.repositories()
+    fun offlineRepositories() = dao.offlineRepositories()
     fun repoFlow(id: String) = dao.repoFlow(id)
     suspend fun repo(id: String) = dao.repo(id)
     fun treePaths(id: String) = dao.treePaths(id)
@@ -59,7 +79,10 @@ class AppRepository(
     private suspend fun <T> call(block: suspend () -> T): T = try {
         block()
     } catch (e: GitHubException) {
-        if (e.kind == GitHubError.Unauthorized && tokens.load() != null) tokens.clear() // revoked/expired
+        if (e.kind == GitHubError.Unauthorized) {
+            tokens.clear()
+            _authState.value = AuthState(signedIn = false, message = e.message)
+        }
         throw e
     }
 
@@ -153,6 +176,46 @@ class AppRepository(
         }
     }
 
+    suspend fun downloadForOffline(
+        id: String,
+        onProgress: (completed: Int, total: Int) -> Unit,
+    ): OfflineDownloadReport {
+        val repo = dao.repo(id) ?: throw IllegalStateException("Repository is no longer saved.")
+        val entries = dao.treeEntries(id)
+        val cached = dao.cachedDocMeta(id).associate { it.path to it.sha }
+        var downloaded = 0
+        var alreadyCached = 0
+        var failed = 0
+        var completed = 0
+        for (entry in entries) {
+            if (cached[entry.path] == entry.sha) {
+                alreadyCached++
+                completed++
+                onProgress(completed, entries.size)
+                continue
+            }
+            try {
+                val text = call { api.getFileRaw(repo.owner, repo.name, repo.branch, entry.path) }
+                if (text.length <= MAX_CACHE_CHARS) {
+                    dao.upsertDoc(CachedDocumentEntity(id, entry.path, entry.sha, text, System.currentTimeMillis()))
+                    downloaded++
+                } else {
+                    failed++
+                }
+            } catch (e: GitHubException) {
+                failed++
+                if (e.kind in setOf(GitHubError.RateLimited, GitHubError.Unauthorized, GitHubError.Forbidden)) {
+                    completed++
+                    onProgress(completed, entries.size)
+                    break
+                }
+            }
+            completed++
+            onProgress(completed, entries.size)
+        }
+        return OfflineDownloadReport(downloaded, alreadyCached, failed + (entries.size - completed))
+    }
+
     suspend fun recordHistory(id: String, path: String, title: String) {
         val now = System.currentTimeMillis()
         dao.upsertHistory(HistoryEntity(id, path, title, now))
@@ -166,16 +229,55 @@ class AppRepository(
 
     suspend fun removeBookmark(id: String, path: String) = dao.deleteBookmark(id, path)
 
+    suspend fun restoreBookmarks(bookmarks: List<BookmarkBackup>): Pair<Int, Int> {
+        var restored = 0
+        var skipped = 0
+        for (bookmark in bookmarks) {
+            val id = makeId(bookmark.owner, bookmark.repoName, bookmark.branch)
+            if (dao.repo(id) == null) {
+                skipped++
+                continue
+            }
+            dao.upsertBookmark(
+                BookmarkEntity(id, bookmark.path, bookmark.title, bookmark.createdAt),
+            )
+            restored++
+        }
+        return restored to skipped
+    }
+
     // --- authentication (Personal Access Token) ---
-    fun hasToken() = tokens.load() != null
     fun token(): String? = tokens.load()
 
     suspend fun signIn(token: String): Result<String> = try {
-        val login = api.validateToken(token.trim())
-        tokens.save(token.trim())
+        _authState.value = _authState.value.copy(busy = true, message = null)
+        val cleanToken = token.trim()
+        val login = api.validateToken(cleanToken)
+        tokens.save(cleanToken, login)
+        _authState.value = AuthState(signedIn = true, message = "Signed in as $login.", username = login)
         Result.success(login)
     } catch (e: GitHubException) {
+        _authState.value = _authState.value.copy(busy = false, message = e.message)
         Result.failure(e)
+    }
+
+    suspend fun restoreAuthUsername() {
+        val token = tokens.load() ?: run {
+            _authState.value = AuthState(signedIn = false)
+            return
+        }
+        if (_authState.value.username != null) return
+        try {
+            val login = call { api.validateToken(token) }
+            if (tokens.load() == token) {
+                tokens.save(token, login)
+                _authState.value = _authState.value.copy(username = login, message = null)
+            }
+        } catch (e: GitHubException) {
+            if (_authState.value.signedIn) {
+                _authState.value = _authState.value.copy(message = e.message)
+            }
+        }
     }
 
     suspend fun getUserRepos(): Result<List<RepoDto>> = try {
@@ -187,6 +289,7 @@ class AppRepository(
     /** Signs out and removes cached private repositories so private content does not outlive the credential. */
     suspend fun signOut() {
         tokens.clear()
+        _authState.value = AuthState(signedIn = false, message = "Signed out. Cached private repositories were removed.")
         dao.deletePrivateRepos()
     }
 

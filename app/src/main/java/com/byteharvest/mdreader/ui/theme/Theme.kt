@@ -16,11 +16,15 @@ import com.byteharvest.mdreader.data.local.ThemeMode
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF1F5FBF), onPrimary = Color.White,
-    secondary = Color(0xFF4F6070), background = Color(0xFFFAFBFD), surface = Color(0xFFFAFBFD),
+    secondary = Color(0xFF171717), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE5E5E5), onSecondaryContainer = Color(0xFF202020),
+    background = Color(0xFFFAFBFD), surface = Color(0xFFFAFBFD),
 )
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF9DC3FF), onPrimary = Color(0xFF002F65),
-    secondary = Color(0xFFB7C8DA), background = Color(0xFF101418), surface = Color(0xFF101418),
+    secondary = Color(0xFFE5E5E5), onSecondary = Color(0xFF202020),
+    secondaryContainer = Color(0xFF3A3A3A), onSecondaryContainer = Color(0xFFE5E5E5),
+    background = Color(0xFF101418), surface = Color(0xFF101418),
 )
 
 object Spacing {
@@ -31,7 +35,7 @@ object Spacing {
 }
 
 @Composable
-fun MdReaderTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+fun GitreadMeTheme(mode: ThemeMode, content: @Composable () -> Unit) {
     val dark = when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
@@ -42,6 +46,11 @@ fun MdReaderTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         dark -> DarkColors
         else -> LightColors
-    }
+    }.copy(
+        secondary = if (dark) Color(0xFFE5E5E5) else Color(0xFF171717),
+        onSecondary = if (dark) Color(0xFF202020) else Color.White,
+        secondaryContainer = if (dark) Color(0xFF3A3A3A) else Color(0xFFE5E5E5),
+        onSecondaryContainer = if (dark) Color(0xFFE5E5E5) else Color(0xFF202020),
+    )
     MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }

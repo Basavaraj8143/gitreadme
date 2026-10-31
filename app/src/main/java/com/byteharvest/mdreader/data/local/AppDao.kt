@@ -11,6 +11,21 @@ interface AppDao {
     @Query("SELECT * FROM repositories ORDER BY lastOpenedAt DESC")
     fun repositories(): Flow<List<RepositoryEntity>>
 
+    @Query(
+        "SELECT r.id AS repoId, r.owner AS owner, r.name AS repoName, r.branch AS branch, " +
+            "r.description AS description, " +
+            "(SELECT COUNT(*) FROM tree_entries t WHERE t.repoId = r.id) AS totalDocs, " +
+            "(SELECT COUNT(*) FROM tree_entries t JOIN cached_documents c " +
+            "ON c.repoId = t.repoId AND c.path = t.path AND c.sha = t.sha WHERE t.repoId = r.id) AS cachedDocs " +
+            "FROM repositories r " +
+            "WHERE (SELECT COUNT(*) FROM tree_entries t WHERE t.repoId = r.id) > 0 " +
+            "AND (SELECT COUNT(*) FROM tree_entries t WHERE t.repoId = r.id) = " +
+            "(SELECT COUNT(*) FROM tree_entries t JOIN cached_documents c " +
+            "ON c.repoId = t.repoId AND c.path = t.path AND c.sha = t.sha WHERE t.repoId = r.id) " +
+            "ORDER BY r.lastOpenedAt DESC"
+    )
+    fun offlineRepositories(): Flow<List<OfflineRepositoryItem>>
+
     @Query("SELECT * FROM repositories WHERE id = :id")
     suspend fun repo(id: String): RepositoryEntity?
 

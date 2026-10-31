@@ -23,7 +23,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -52,6 +51,7 @@ import com.byteharvest.mdreader.domain.filterPaths
 import com.byteharvest.mdreader.domain.listDirectory
 import com.byteharvest.mdreader.data.repository.SyncReport
 import com.byteharvest.mdreader.ui.appViewModel
+import com.byteharvest.mdreader.ui.components.DocListItem
 import com.byteharvest.mdreader.ui.components.EmptyState
 import com.byteharvest.mdreader.ui.components.LoadingBox
 import com.byteharvest.mdreader.ui.navArg
@@ -193,10 +193,11 @@ fun BrowserScreen(
                                 item { Text(d, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
                             items(listing.folders, key = { "d/$it" }) { f ->
-                                ListItem(
-                                    headlineContent = { Text(f) },
-                                    leadingContent = { Icon(Icons.Filled.Folder, null) },
-                                    modifier = Modifier.clickable { onOpenDir(vm.repoId, if (vm.dir.isEmpty()) f else "${vm.dir}/$f") },
+                                DocListItem(
+                                    title = f,
+                                    subtitle = "Folder",
+                                    icon = Icons.Filled.Folder,
+                                    onClick = { onOpenDir(vm.repoId, if (vm.dir.isEmpty()) f else "${vm.dir}/$f") },
                                 )
                             }
                             items(listing.files, key = { "f/$it" }) { f ->
@@ -231,10 +232,10 @@ fun BrowserScreen(
 
 @Composable
 private fun FileRow(name: String, subtitle: String?, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(name) },
-        supportingContent = subtitle?.let { { Text(it) } },
-        leadingContent = { Icon(Icons.Filled.Description, null) },
-        modifier = Modifier.clickable(onClick = onClick),
+    DocListItem(
+        title = name,
+        subtitle = subtitle ?: "Markdown document",
+        icon = Icons.Filled.Description,
+        onClick = onClick,
     )
 }

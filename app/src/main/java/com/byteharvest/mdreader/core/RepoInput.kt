@@ -1,13 +1,19 @@
 package com.byteharvest.mdreader.core
 
-data class RepoInput(val owner: String, val name: String, val branch: String? = null, val path: String? = null)
+data class RepoInput(
+    val owner: String,
+    val name: String,
+    val branch: String? = null,
+    val path: String? = null,
+    val isFile: Boolean = false,
+)
 
 sealed interface ParseResult {
     data class Ok(val input: RepoInput) : ParseResult
     data class Error(val message: String) : ParseResult
 }
 
-/** Parses "owner/repo", github.com URLs (with or without scheme), .git suffixes and git@github.com: URLs. */
+/** Parses owner/repo, GitHub URLs (including tree/blob targets), .git suffixes and GitHub SSH URLs. */
 object RepoInputParser {
     private val ownerRe = Regex("^[A-Za-z0-9-]+$")
     private val nameRe = Regex("^[A-Za-z0-9_.-]+$")
@@ -39,10 +45,12 @@ object RepoInputParser {
         if (!nameRe.matches(name) || name == "." || name == "..") return ParseResult.Error("\"$name\" is not a valid repository name.")
         var branch: String? = null
         var path: String? = null
+        var isFile = false
         if (segs.size >= 4 && (segs[2] == "tree" || segs[2] == "blob")) {
+            isFile = segs[2] == "blob"
             branch = segs[3] // branch names containing '/' cannot be told apart from a path in a URL
             path = segs.drop(4).joinToString("/").ifEmpty { null }
         }
-        return ParseResult.Ok(RepoInput(owner, name, branch, path))
+        return ParseResult.Ok(RepoInput(owner, name, branch, path, isFile))
     }
 }

@@ -1,11 +1,16 @@
 package com.byteharvest.mdreader.ui.settings
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,7 +34,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -39,41 +47,112 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
+import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
+import com.byteharvest.mdreader.data.repository.BookmarkBackup
 import com.byteharvest.mdreader.ui.appViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
-data class AuthState(val signedIn: Boolean, val busy: Boolean = false, val message: String? = null)
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
+    val readerTheme: StateFlow<ReaderThemeMode> =
+        c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
-    private val _auth = MutableStateFlow(AuthState(c.repository.hasToken()))
-    val auth = _auth.asStateFlow()
+    val auth = c.repository.authState
 
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
+    fun setReaderTheme(mode: ReaderThemeMode) { viewModelScope.launch { c.settings.setReaderTheme(mode) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
 
     fun signIn(token: String) {
-        viewModelScope.launch {
-            _auth.value = AuthState(_auth.value.signedIn, busy = true)
-            c.repository.signIn(token).fold(
-                { _auth.value = AuthState(true, message = "Signed in as $it.") },
-                { _auth.value = AuthState(c.repository.hasToken(), message = it.message) },
-            )
-        }
+        viewModelScope.launch { c.repository.signIn(token) }
     }
 
     fun signOut() {
-        viewModelScope.launch {
-            c.repository.signOut()
-            _auth.value = AuthState(false, message = "Signed out. Cached private repositories were removed.")
+        viewModelScope.launch { c.repository.signOut() }
+    }
+
+    suspend fun exportBackup(uri: Uri): String = withContext(Dispatchers.IO) {
+        try {
+            val settings = c.settings.snapshot()
+            val bookmarks = c.repository.bookmarks().first()
+            val root = JSONObject()
+                .put("formatVersion", 1)
+                .put("exportedAt", System.currentTimeMillis())
+                .put(
+                    "settings",
+                    JSONObject()
+                        .put("theme", settings.theme.name)
+                        .put("readerTheme", settings.readerTheme.name)
+                        .put("fontSizeSp", settings.fontSizeSp.toDouble()),
+                )
+                .put("bookmarks", JSONArray().apply {
+                    bookmarks.forEach { bookmark ->
+                        put(
+                            JSONObject()
+                                .put("owner", bookmark.owner)
+                                .put("repository", bookmark.repoName)
+                                .put("branch", bookmark.branch)
+                                .put("path", bookmark.path)
+                                .put("title", bookmark.title)
+                                .put("createdAt", bookmark.createdAt),
+                        )
+                    }
+                })
+            val output = c.appContext.contentResolver.openOutputStream(uri)
+                ?: return@withContext "Could not open the selected backup file."
+            output.bufferedWriter(Charsets.UTF_8).use { it.write(root.toString(2)) }
+            "Settings and bookmarks exported."
+        } catch (e: Exception) {
+            "Backup export failed: ${e.message ?: "Could not write the file."}"
+        }
+    }
+
+    suspend fun importBackup(uri: Uri): String = withContext(Dispatchers.IO) {
+        try {
+            val input = c.appContext.contentResolver.openInputStream(uri)
+                ?: return@withContext "Could not open the selected backup file."
+            val root = input.bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+            if (root.getInt("formatVersion") != 1) return@withContext "This backup format is not supported."
+
+            val settingData = root.getJSONObject("settings")
+            val theme = ThemeMode.valueOf(settingData.getString("theme"))
+            val readerTheme = ReaderThemeMode.valueOf(settingData.getString("readerTheme"))
+            val fontSize = settingData.getDouble("fontSizeSp").toFloat()
+            require(fontSize.isFinite()) { "Backup has an invalid font size." }
+            val bookmarksJson = root.getJSONArray("bookmarks")
+            val bookmarks = List(bookmarksJson.length()) { index ->
+                val item = bookmarksJson.getJSONObject(index)
+                BookmarkBackup(
+                    owner = item.getString("owner"),
+                    repoName = item.getString("repository"),
+                    branch = item.getString("branch"),
+                    path = item.getString("path"),
+                    title = item.getString("title"),
+                    createdAt = item.getLong("createdAt"),
+                )
+            }
+
+            c.settings.setTheme(theme)
+            c.settings.setReaderTheme(readerTheme)
+            c.settings.setFontSize(fontSize)
+            val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
+            if (skipped > 0) {
+                "$restored bookmarks restored; $skipped skipped. Save their repositories first, then import again."
+            } else {
+                "Settings and $restored bookmarks restored."
+            }
+        } catch (e: Exception) {
+            "Backup import failed: ${e.message ?: "The file is invalid or unreadable."}"
         }
     }
 }
@@ -83,10 +162,19 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
 fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val vm = appViewModel { c, _ -> SettingsViewModel(c) }
     val theme by vm.theme.collectAsStateWithLifecycle()
+    val readerTheme by vm.readerTheme.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }
     var confirmSignOut by remember { mutableStateOf(false) }
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch { Toast.makeText(context, vm.exportBackup(uri), Toast.LENGTH_LONG).show() }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { Toast.makeText(context, vm.importBackup(uri), Toast.LENGTH_LONG).show() }
+    }
 
     Scaffold(
         topBar = {
@@ -102,9 +190,38 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
         ) {
             Text("Theme", style = MaterialTheme.typography.titleMedium)
             ThemeMode.values().forEach { m ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = theme == m, onClick = { vm.setTheme(m) })
-                    Text(m.name.lowercase().replaceFirstChar { it.uppercase() })
+                Row(
+                    Modifier.fillMaxWidth().selectable(
+                        selected = theme == m,
+                        role = Role.RadioButton,
+                        onClick = { vm.setTheme(m) },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = theme == m, onClick = null)
+                    Text(m.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.padding(vertical = 12.dp))
+                }
+            }
+            HorizontalDivider()
+            Text("Reader appearance", style = MaterialTheme.typography.titleMedium)
+            ReaderThemeMode.values().forEach { mode ->
+                Row(
+                    Modifier.fillMaxWidth().selectable(
+                        selected = readerTheme == mode,
+                        role = Role.RadioButton,
+                        onClick = { vm.setReaderTheme(mode) },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = readerTheme == mode, onClick = null)
+                    Text(
+                        when (mode) {
+                            ReaderThemeMode.APP -> "Follow app theme"
+                            ReaderThemeMode.LIGHT -> "Light"
+                            ReaderThemeMode.DARK -> "Dark"
+                        },
+                        Modifier.padding(vertical = 12.dp),
+                    )
                 }
             }
             HorizontalDivider()
@@ -136,6 +253,19 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             HorizontalDivider()
             Text("Repositories and cache", style = MaterialTheme.typography.titleMedium)
             OutlinedButton(onRepos) { Text("Manage saved repositories") }
+            HorizontalDivider()
+            Text("Backup", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Export or restore your theme, reader appearance, font size and bookmarks. Tokens and cached documents are not included. " +
+                    "Save repositories on this device before importing their bookmarks.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = { backupLauncher.launch("gitread-me-backup.json") }) {
+                Text("Export settings and bookmarks")
+            }
+            OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) }) {
+                Text("Import settings and bookmarks")
+            }
         }
     }
 

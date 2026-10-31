@@ -7,25 +7,33 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Toc
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,23 +55,72 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byteharvest.mdreader.domain.LinkResolver
 import com.byteharvest.mdreader.domain.LinkTarget
 import com.byteharvest.mdreader.domain.isMarkdownPath
+import com.byteharvest.mdreader.data.local.ReaderThemeMode
+import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.ErrorBox
 import com.byteharvest.mdreader.ui.components.LoadingBox
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+private val ReaderDarkColors = darkColorScheme(
+    primary = Color(0xFFAAC7FF),
+    onPrimary = Color(0xFF10213A),
+    secondary = Color(0xFFD0D0D0),
+    onSecondary = Color(0xFF202020),
+    background = Color(0xFF1E1E1E),
+    surface = Color(0xFF1E1E1E),
+    surfaceVariant = Color(0xFF181818),
+    onSurface = Color(0xFFE7E2DC),
+    onSurfaceVariant = Color(0xFFC5C2BC),
+    outline = Color(0xFF77736D),
+    outlineVariant = Color(0xFF494642),
+    primaryContainer = Color(0xFF29394F),
+    onPrimaryContainer = Color(0xFFD8E5FA),
+    tertiaryContainer = Color(0xFF33483F),
+    onTertiaryContainer = Color(0xFFD1E8D8),
+)
+private val ReaderLightColors = lightColorScheme(
+    primary = Color(0xFF315FA5),
+    onPrimary = Color.White,
+    secondary = Color(0xFF171717),
+    onSecondary = Color.White,
+    background = Color(0xFFFAF9F6),
+    surface = Color(0xFFFAF9F6),
+    surfaceVariant = Color(0xFFF0EFEC),
+    onSurface = Color(0xFF292824),
+    onSurfaceVariant = Color(0xFF5C5A55),
+    outline = Color(0xFF77736D),
+    outlineVariant = Color(0xFFD5D2CC),
+    primaryContainer = Color(0xFFE5ECF7),
+    onPrimaryContainer = Color(0xFF202D42),
+    tertiaryContainer = Color(0xFFE5EEE8),
+    onTertiaryContainer = Color(0xFF263D30),
+)
 
 private fun toast(c: Context, msg: String) = Toast.makeText(c, msg, Toast.LENGTH_SHORT).show()
 
@@ -76,15 +134,38 @@ private fun openUrl(c: Context, url: String) {
 @Composable
 fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
     val vm = appViewModel { c, h -> ReaderViewModel(h, c) }
+    val readerTheme by vm.readerTheme.collectAsStateWithLifecycle()
+    val appTheme by vm.appTheme.collectAsStateWithLifecycle()
+    val systemDark = isSystemInDarkTheme()
+    val useDark = when (readerTheme) {
+        ReaderThemeMode.DARK -> true
+        ReaderThemeMode.LIGHT -> false
+        ReaderThemeMode.APP -> when (appTheme) {
+            ThemeMode.SYSTEM -> systemDark
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        }
+    }
+    MaterialTheme(colorScheme = if (useDark) ReaderDarkColors else ReaderLightColors) {
+        ReaderContent(vm, onBack, onOpenDoc)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
+@Composable
+private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val search by vm.search.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
     val bookmarked by vm.bookmarked.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    var positionRestored by remember(vm.repoId, vm.path) { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var showRawMarkdown by rememberSaveable { mutableStateOf(false) }
     var showToc by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -100,6 +181,22 @@ fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
     LaunchedEffect(searching) { if (searching) focus.requestFocus() }
 
     val doc = state.doc
+    LaunchedEffect(doc, positionRestored) {
+        val blockCount = doc?.blocks?.size ?: return@LaunchedEffect
+        if (!positionRestored) {
+            val saved = vm.readingPosition()
+            if (blockCount > 0) listState.scrollToItem(saved.index.coerceAtMost(blockCount - 1), saved.offset)
+            positionRestored = true
+        }
+    }
+    LaunchedEffect(positionRestored, listState) {
+        if (!positionRestored) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .debounce(500)
+            .collect { (index, offset) -> vm.saveReadingPosition(index, offset) }
+    }
+
     val activeBlock = search.matches.getOrNull(search.current) ?: -1
     val ctx = remember(doc, search.query, activeBlock, fontSp) {
         RenderCtx(
@@ -158,8 +255,22 @@ fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
                 )
             } else {
                 TopAppBar(
-                    title = { Text(vm.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null)
+                            Text(vm.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    },
                     navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
                     actions = {
                         IconButton({ searching = true }, enabled = doc != null) { Icon(Icons.Filled.Search, "Search in document") }
                         IconButton({ showToc = true }, enabled = doc != null) { Icon(Icons.Filled.Toc, "Table of contents") }
@@ -168,6 +279,22 @@ fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
                         }
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More options") }
                         DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (showRawMarkdown) "View rendered Markdown" else "View raw Markdown") },
+                                enabled = doc != null,
+                                onClick = { menu = false; showRawMarkdown = !showRawMarkdown },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy document") },
+                                enabled = state.rawMarkdown != null,
+                                onClick = {
+                                    menu = false
+                                    state.rawMarkdown?.let {
+                                        clipboard.setText(AnnotatedString(it))
+                                        toast(context, "Markdown copied")
+                                    }
+                                },
+                            )
                             DropdownMenuItem(text = { Text("Larger text") }, onClick = { vm.changeFont(+2f) })
                             DropdownMenuItem(text = { Text("Smaller text") }, onClick = { vm.changeFont(-2f) })
                             DropdownMenuItem(text = { Text("Refresh") }, onClick = { menu = false; vm.load(true) })
@@ -200,6 +327,30 @@ fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
             when {
                 state.loading && doc == null -> LoadingBox()
                 state.error != null -> ErrorBox(state.error!!, onRetry = { vm.load(true) })
+                doc != null && showRawMarkdown && state.rawMarkdown != null -> SelectionContainer {
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+                    ) {
+                        LazyColumn(
+                            Modifier.widthIn(max = 800.dp).fillMaxSize(),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp, vertical = 24.dp),
+                        ) {
+                            item {
+                                Text(
+                                    state.rawMarkdown.orEmpty(),
+                                    style = TextStyle(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 14.sp,
+                                        lineHeight = 22.sp,
+                                    ),
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                )
+                            }
+                        }
+                    }
+                }
                 doc != null -> Column {
                     state.notice?.let {
                         Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {

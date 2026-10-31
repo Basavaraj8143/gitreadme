@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,15 +25,21 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -49,6 +56,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -67,12 +75,39 @@ class RenderCtx(
     val image: (String) -> ImageSpec?,
 )
 
-private class Palette(val link: Color, val codeBg: Color, val hl: Color, val hlActive: Color, val outline: Color)
+private class Palette(
+    val link: Color,
+    val codeBg: Color,
+    val hl: Color,
+    val hlActive: Color,
+    val outline: Color,
+    val codeText: Color,
+    val codeKeyword: Color,
+    val codeType: Color,
+    val codeString: Color,
+    val codeFunction: Color,
+    val codeNumber: Color,
+    val codeComment: Color,
+)
 
 @Composable
 private fun palette(): Palette {
     val cs = MaterialTheme.colorScheme
-    return Palette(cs.primary, cs.surfaceVariant, Color(0x66FFEB3B), Color(0xAAFF9800), cs.outlineVariant)
+    val dark = cs.background.luminance() < 0.5f
+    return Palette(
+        link = cs.primary,
+        codeBg = cs.surfaceVariant,
+        hl = Color(0x66FFEB3B),
+        hlActive = Color(0xAAFF9800),
+        outline = cs.outlineVariant,
+        codeText = if (dark) Color(0xFFE7E2DC) else Color(0xFF292824),
+        codeKeyword = if (dark) Color(0xFFE7A6D8) else Color(0xFF9A2875),
+        codeType = if (dark) Color(0xFFD4AEF5) else Color(0xFF7041A6),
+        codeString = if (dark) Color(0xFFA8D7A0) else Color(0xFF237A45),
+        codeFunction = if (dark) Color(0xFF9CD6ED) else Color(0xFF246B8C),
+        codeNumber = if (dark) Color(0xFFE3BD84) else Color(0xFF9A5A10),
+        codeComment = if (dark) Color(0xFF9A9A94) else Color(0xFF77736D),
+    )
 }
 
 /** One LazyColumn item per top-level block, so long documents stay smooth. */
@@ -81,9 +116,9 @@ fun MarkdownBlocks(doc: MarkdownDoc, listState: LazyListState, ctx: RenderCtx, m
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.widthIn(max = 720.dp).fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.widthIn(max = 800.dp).fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(doc.blocks) { index, block -> BlockView(block, ctx, index == ctx.activeBlock) }
         }
@@ -92,7 +127,12 @@ fun MarkdownBlocks(doc: MarkdownDoc, listState: LazyListState, ctx: RenderCtx, m
 
 @Composable
 private fun bodyStyle(ctx: RenderCtx, scale: Float = 1f): TextStyle =
-    MaterialTheme.typography.bodyLarge.copy(fontSize = (ctx.baseSp * scale).sp, lineHeight = (ctx.baseSp * scale * 1.6f).sp)
+    MaterialTheme.typography.bodyLarge.copy(
+        fontFamily = FontFamily.Serif,
+        fontSize = (ctx.baseSp * scale).sp,
+        lineHeight = (ctx.baseSp * scale * 1.7f).sp,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -118,10 +158,47 @@ private fun BlockView(b: MdBlock, ctx: RenderCtx, active: Boolean) {
                 }
             }
         }
-        is MdBlock.Code -> Surface(color = p.codeBg, shape = RoundedCornerShape(8.dp)) {
-            Box(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) {
-                val text = remember(b, ctx.query, active) { buildAnnotatedString { appendHighlighted(b.text, ctx.query, active, p) } }
-                Text(text, fontFamily = FontFamily.Monospace, fontSize = (ctx.baseSp * 0.85f).sp, softWrap = false)
+        is MdBlock.Code -> {
+            val clipboard = LocalClipboardManager.current
+            val context = LocalContext.current
+            Surface(
+                color = p.codeBg,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            b.lang?.uppercase() ?: "CODE",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        TextButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(b.text))
+                                Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
+                            },
+                        ) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.width(14.dp))
+                            Text("Copy", modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                        val text = remember(b, ctx.query, active) { buildAnnotatedString { appendCode(b.text, ctx.query, active, p) } }
+                        Text(
+                            text,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = (ctx.baseSp * 0.85f).sp,
+                            lineHeight = (ctx.baseSp * 1.25f).sp,
+                            softWrap = false,
+                            color = p.codeText,
+                        )
+                    }
+                }
             }
         }
         is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
@@ -165,6 +242,33 @@ private fun TableRowView(cells: List<List<Inline>>, cols: Int, header: Boolean, 
             }
         }
     }
+}
+
+private val codeTokenRegex = Regex(
+    """(?<comment>//[^\n]*|#[^\n]*|/\*[\s\S]*?\*/)|(?<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(?<keyword>\b(?:abstract|as|assert|async|await|break|case|catch|class|const|continue|def|default|do|else|enum|extends|final|finally|for|fun|function|if|implements|import|in|interface|let|new|null|object|package|private|protected|public|return|static|super|switch|this|throw|try|val|var|void|while|yield|true|false|None|self|undefined)\b)|(?<number>\b\d+(?:\.\d+)?\b)|(?<identifier>\b[A-Za-z_$][A-Za-z0-9_$]*\b)""",
+)
+private val codeTypePrefixRegex = Regex("""(?:class|interface|enum|object|extends|implements|new)\s+$""")
+
+private fun AnnotatedString.Builder.appendCode(source: String, query: String, active: Boolean, p: Palette) {
+    var cursor = 0
+    for (match in codeTokenRegex.findAll(source)) {
+        if (match.range.first > cursor) appendHighlighted(source.substring(cursor, match.range.first), query, active, p)
+        val token = match.value
+        val color = when {
+            match.groups["comment"] != null -> p.codeComment
+            match.groups["string"] != null -> p.codeString
+            match.groups["keyword"] != null -> p.codeKeyword
+            match.groups["number"] != null -> p.codeNumber
+            match.groups["identifier"] != null &&
+                codeTypePrefixRegex.containsMatchIn(source.substring(0, match.range.first).trimEnd()) -> p.codeType
+            match.groups["identifier"] != null &&
+                source.substring(match.range.last + 1).trimStart().startsWith("(") -> p.codeFunction
+            else -> p.codeText
+        }
+        withStyle(SpanStyle(color = color)) { appendHighlighted(token, query, active, p) }
+        cursor = match.range.last + 1
+    }
+    if (cursor < source.length) appendHighlighted(source.substring(cursor), query, active, p)
 }
 
 @Composable

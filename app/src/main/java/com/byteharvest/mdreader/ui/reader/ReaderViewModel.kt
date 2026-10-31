@@ -12,7 +12,9 @@ import com.byteharvest.mdreader.core.markdown.countMatches
 import com.byteharvest.mdreader.core.markdown.searchRuns
 import com.byteharvest.mdreader.core.pdf.PdfExporter
 import com.byteharvest.mdreader.data.local.RepositoryEntity
+import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.SettingsStore
+import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.remote.GitHubUrls
 import com.byteharvest.mdreader.data.repository.DocLoad
 import com.byteharvest.mdreader.domain.LinkResolver
@@ -32,6 +34,7 @@ import java.io.File
 data class ReaderState(
     val loading: Boolean = true,
     val doc: MarkdownDoc? = null,
+    val rawMarkdown: String? = null,
     val error: String? = null,
     val notice: String? = null,
 )
@@ -54,9 +57,16 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     val state = _state.asStateFlow()
     private val _search = MutableStateFlow(SearchState())
     val search = _search.asStateFlow()
-    private var repo: RepositoryEntity? = null
+
+    // Repo loaded as StateFlow to avoid race conditions in imageSpec() and githubUrl()
+    private val _repo = MutableStateFlow<RepositoryEntity?>(null)
+    val repo: StateFlow<RepositoryEntity?> = _repo.asStateFlow()
 
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
+    val readerTheme: StateFlow<ReaderThemeMode> =
+        c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
+    val appTheme: StateFlow<ThemeMode> =
+        c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     val bookmarked: StateFlow<Boolean> = if (repoId == "local") {
         MutableStateFlow(false)
     } else {
@@ -68,7 +78,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         if (repoId == "local") {
             loadLocalDoc()
         } else {
-            viewModelScope.launch { repo = c.repository.repo(repoId) }
+            viewModelScope.launch { _repo.value = c.repository.repo(repoId) }
             load(false)
         }
     }
@@ -80,11 +90,12 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         }
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
+            _repo.value = c.repository.repo(repoId)
             when (val r = c.repository.loadDocument(repoId, path, force)) {
                 is DocLoad.Fail -> _state.value = ReaderState(loading = false, error = r.message)
                 is DocLoad.Ok -> {
                     val doc = withContext(Dispatchers.Default) { engine.parse(r.text) } // keeps the UI thread free
-                    _state.value = ReaderState(loading = false, doc = doc, notice = r.note)
+                    _state.value = ReaderState(loading = false, doc = doc, rawMarkdown = r.text, notice = r.note)
                     c.repository.recordHistory(repoId, path, title)
                     setQuery(_search.value.query)
                 }
@@ -100,7 +111,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
                     File(path).readText()
                 }
                 val doc = withContext(Dispatchers.Default) { engine.parse(text) }
-                _state.value = ReaderState(loading = false, doc = doc)
+                _state.value = ReaderState(loading = false, doc = doc, rawMarkdown = text)
                 setQuery(_search.value.query)
             } catch (e: Exception) {
                 _state.value = ReaderState(loading = false, error = e.message ?: "Could not read local file.")
@@ -139,13 +150,19 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         viewModelScope.launch { c.settings.setFontSize(fontSp.value + delta) }
     }
 
+    suspend fun readingPosition() = c.settings.readerPosition(repoId, path)
+
+    fun saveReadingPosition(index: Int, offset: Int) {
+        viewModelScope.launch { c.settings.saveReaderPosition(repoId, path, index, offset) }
+    }
+
     suspend fun exists(p: String): Boolean {
         if (repoId == "local") return false
         return c.repository.hasFile(repoId, p)
     }
 
     fun githubUrl(p: String): String =
-        repo?.let { GitHubUrls.blob(it.owner, it.name, it.branch, p) } ?: "https://github.com"
+        _repo.value?.let { GitHubUrls.blob(it.owner, it.name, it.branch, p) } ?: "https://github.com"
 
     /** Relative images resolve against this document's repo path + branch; private content gets auth and no caching. */
     fun imageSpec(src: String): ImageSpec? {
@@ -153,7 +170,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         if (s.startsWith("http://") || s.startsWith("https://")) return ImageSpec(s, emptyMap(), true)
         if (s.startsWith("//")) return ImageSpec("https:$s", emptyMap(), true)
         if (repoId == "local") return null
-        val r = repo ?: return null
+        val r = _repo.value ?: return null
         val resolved = LinkResolver.resolveRepoRef(path, s) ?: return null
         if (!r.isPrivate) return ImageSpec(GitHubUrls.raw(r.owner, r.name, r.branch, resolved).toString(), emptyMap(), true)
         val token = c.repository.token() ?: return null

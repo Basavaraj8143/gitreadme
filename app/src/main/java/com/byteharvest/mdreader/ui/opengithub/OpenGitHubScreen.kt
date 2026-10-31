@@ -26,8 +26,12 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,11 +39,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,7 +73,8 @@ import com.byteharvest.mdreader.data.remote.RepoDto
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.DocListItem
 import com.byteharvest.mdreader.ui.home.OpenState
-import com.byteharvest.mdreader.ui.settings.AuthState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -74,83 +82,116 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+data class UserReposState(
+    val repos: List<RepoDto>? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
+data class OfflineTaskState(val repoKey: String? = null, val completed: Int = 0, val total: Int = 0)
+
 class OpenGitHubViewModel(private val c: AppContainer) : ViewModel() {
     val recent: StateFlow<List<RecentDoc>?> =
         c.repository.recentDocs(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val repos: StateFlow<List<RepositoryEntity>?> =
         c.repository.repositories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _userRepos = MutableStateFlow<List<RepoDto>?>(null)
+    private val _userRepos = MutableStateFlow(UserReposState())
     val userRepos = _userRepos.asStateFlow()
+    private var userReposJob: Job? = null
 
     private val _open = MutableStateFlow(OpenState())
     val open = _open.asStateFlow()
+    private val _offlineTask = MutableStateFlow(OfflineTaskState())
+    val offlineTask = _offlineTask.asStateFlow()
+    val messages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
 
-    private val _auth = MutableStateFlow(AuthState(c.repository.hasToken()))
-    val auth = _auth.asStateFlow()
-
-    var username by mutableStateOf<String?>(null)
+    val auth = c.repository.authState
 
     init {
-        if (c.repository.hasToken()) {
-            fetchUserRepos()
+        if (auth.value.signedIn) {
+            viewModelScope.launch { c.repository.restoreAuthUsername() }
         }
     }
 
     fun clearError() { _open.value = OpenState() }
 
     fun fetchUserRepos() {
-        viewModelScope.launch {
+        userReposJob?.cancel()
+        _userRepos.value = UserReposState(loading = true)
+        userReposJob = viewModelScope.launch {
             c.repository.getUserRepos().fold(
-                onSuccess = { _userRepos.value = it },
-                onFailure = { _userRepos.value = emptyList() }
+                onSuccess = { _userRepos.value = UserReposState(repos = it) },
+                onFailure = {
+                    _userRepos.value = UserReposState(error = it.message ?: "Could not load repositories.")
+                }
             )
         }
     }
 
-    fun open(raw: String, onDone: (String) -> Unit) {
+    fun clearUserRepos() {
+        userReposJob?.cancel()
+        _userRepos.value = UserReposState()
+    }
+
+    fun open(raw: String, onDone: (String, String?, Boolean) -> Unit) {
         when (val p = RepoInputParser.parse(raw)) {
             is ParseResult.Error -> _open.value = OpenState(error = p.message)
             is ParseResult.Ok -> viewModelScope.launch {
                 _open.value = OpenState(loading = true)
                 c.repository.openRepository(p.input.owner, p.input.name, p.input.branch).fold(
-                    onSuccess = { _open.value = OpenState(); onDone(it) },
+                    onSuccess = {
+                        _open.value = OpenState()
+                        onDone(it, p.input.path, p.input.isFile)
+                    },
                     onFailure = { _open.value = OpenState(error = it.message ?: "Could not open repository.") },
                 )
             }
         }
     }
 
+    fun makeAvailableOffline(owner: String, name: String, branch: String, savedRepoId: String? = null) {
+        if (_offlineTask.value.repoKey != null) return
+        val repoKey = "$owner/$name@$branch"
+        viewModelScope.launch {
+            _offlineTask.value = OfflineTaskState(repoKey)
+            try {
+                val id = savedRepoId ?: c.repository.openRepository(owner, name, branch).getOrElse { throw it }
+                val report = c.repository.downloadForOffline(id) { done, total ->
+                    _offlineTask.value = OfflineTaskState(repoKey, done, total)
+                }
+                messages.tryEmit(
+                    "Offline download complete: ${report.downloaded} downloaded, " +
+                        "${report.alreadyCached} already saved, ${report.failed} unavailable."
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                messages.tryEmit(e.message ?: "Could not make this repository available offline.")
+            } finally {
+                _offlineTask.value = OfflineTaskState()
+            }
+        }
+    }
+
     fun signIn(token: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            _auth.value = AuthState(c.repository.hasToken(), busy = true)
             c.repository.signIn(token).fold(
                 {
-                    username = it
-                    _auth.value = AuthState(true, message = "Signed in as $it.")
-                    fetchUserRepos()
                     onSuccess()
                 },
-                { _auth.value = AuthState(c.repository.hasToken(), message = it.message) },
+                {},
             )
         }
     }
 
-    fun signOut() {
-        viewModelScope.launch {
-            c.repository.signOut()
-            username = null
-            _userRepos.value = null
-            _auth.value = AuthState(false)
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenGitHubScreen(
     onBack: () -> Unit,
-    onOpenRepo: (String) -> Unit,
+    onOpenRepo: (String, String) -> Unit,
     onOpenDoc: (String, String) -> Unit,
 ) {
     val vm = appViewModel { c, _ -> OpenGitHubViewModel(c) }
@@ -159,17 +200,36 @@ fun OpenGitHubScreen(
     val recent by vm.recent.collectAsStateWithLifecycle()
     val repos by vm.repos.collectAsStateWithLifecycle()
     val userRepos by vm.userRepos.collectAsStateWithLifecycle()
+    val offlineTask by vm.offlineTask.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var menuRepoKey by remember { mutableStateOf<String?>(null) }
 
     var urlInput by rememberSaveable { mutableStateOf("") }
     var showSignInSheet by rememberSaveable { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
     val context = LocalContext.current
 
+    LaunchedEffect(auth.signedIn, userRepos.loading, userRepos.repos, userRepos.error) {
+        if (auth.signedIn) {
+            if (userRepos.repos == null && !userRepos.loading && userRepos.error == null) {
+                vm.fetchUserRepos()
+            }
+        } else {
+            vm.clearUserRepos()
+        }
+    }
+    LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+
+    val openTarget: (String, String?, Boolean) -> Unit = { repoId, path, isFile ->
+        if (isFile && path != null) onOpenDoc(repoId, path)
+        else onOpenRepo(repoId, path.orEmpty())
+    }
     val submit = {
-        vm.open(urlInput) { repoId -> onOpenRepo(repoId) }
+        vm.open(urlInput, openTarget)
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Open from GitHub") },
@@ -184,7 +244,7 @@ fun OpenGitHubScreen(
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("@${vm.username ?: "user"}", style = MaterialTheme.typography.labelMedium)
+                                Text("@${auth.username ?: "user"}", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     } else {
@@ -261,23 +321,66 @@ fun OpenGitHubScreen(
             }
 
             // Your repos Section
-            val onlineRepos = userRepos
+            val onlineRepos = userRepos.repos
+            val reposError = userRepos.error
             val savedRepos = repos
-            if (auth.signedIn && onlineRepos != null) {
+            auth.message?.takeIf { !auth.signedIn && it.isNotBlank() }?.let { message ->
+                item { Text(message, style = MaterialTheme.typography.bodyMedium) }
+            }
+            if (auth.signedIn) {
                 item {
                     Text("Your repos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
                 }
-                if (onlineRepos.isEmpty()) {
+                if (userRepos.loading) {
+                    item { CircularProgressIndicator(Modifier.size(24.dp)) }
+                } else if (reposError != null) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(reposError, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = vm::fetchUserRepos) { Text("Retry") }
+                        }
+                    }
+                } else if (onlineRepos.isNullOrEmpty()) {
                     item {
                         Text("No repositories found.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
                     }
                 } else {
                     items(onlineRepos, key = { "${it.owner.login}/${it.name}" }) { r ->
+                        val repoKey = "${r.owner.login}/${r.name}@${r.defaultBranch}"
+                        val isDownloading = offlineTask.repoKey == repoKey
                         DocListItem(
                             title = "${r.owner.login}/${r.name}",
-                            subtitle = r.description ?: "Default branch: ${r.defaultBranch}",
+                            subtitle = buildString {
+                                append(r.description ?: "Default branch: ${r.defaultBranch}")
+                                if (isDownloading) append("\nDownloading for offline · ${offlineTask.completed}/${offlineTask.total}")
+                            },
                             icon = if (r.isPrivate) Icons.Filled.Lock else Icons.Filled.Folder,
-                            onClick = { vm.open("${r.owner.login}/${r.name}", onOpenRepo) },
+                            onClick = { vm.open("${r.owner.login}/${r.name}", openTarget) },
+                            trailingContent = {
+                                if (isDownloading) {
+                                    CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
+                                } else {
+                                    androidx.compose.material3.IconButton(
+                                        onClick = { menuRepoKey = repoKey },
+                                        enabled = offlineTask.repoKey == null,
+                                    ) {
+                                        Icon(Icons.Filled.MoreVert, "Actions for ${r.name}")
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuRepoKey == repoKey,
+                                        onDismissRequest = { menuRepoKey = null },
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Make available offline") },
+                                            leadingIcon = { Icon(Icons.Filled.DownloadForOffline, contentDescription = null) },
+                                            onClick = {
+                                                menuRepoKey = null
+                                                vm.makeAvailableOffline(r.owner.login, r.name, r.defaultBranch)
+                                            },
+                                        )
+                                    }
+                                }
+                            },
                         )
                     }
                 }
@@ -286,11 +389,41 @@ fun OpenGitHubScreen(
                     Text("Your repos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
                 }
                 items(savedRepos, key = { it.id }) { r ->
+                    val repoKey = "${r.owner}/${r.name}@${r.branch}"
+                    val isDownloading = offlineTask.repoKey == repoKey
                     DocListItem(
                         title = "${r.owner}/${r.name}",
-                        subtitle = r.description ?: "Branch ${r.branch}",
+                        subtitle = buildString {
+                            append(r.description ?: "Branch ${r.branch}")
+                            if (isDownloading) append("\nDownloading for offline · ${offlineTask.completed}/${offlineTask.total}")
+                        },
                         icon = if (r.isPrivate) Icons.Filled.Lock else Icons.Filled.Folder,
-                        onClick = { onOpenRepo(r.id) },
+                        onClick = { onOpenRepo(r.id, "") },
+                        trailingContent = {
+                            if (isDownloading) {
+                                CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
+                            } else {
+                                androidx.compose.material3.IconButton(
+                                    onClick = { menuRepoKey = repoKey },
+                                    enabled = offlineTask.repoKey == null,
+                                ) {
+                                    Icon(Icons.Filled.MoreVert, "Actions for ${r.name}")
+                                }
+                                DropdownMenu(
+                                    expanded = menuRepoKey == repoKey,
+                                    onDismissRequest = { menuRepoKey = null },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Make available offline") },
+                                        leadingIcon = { Icon(Icons.Filled.DownloadForOffline, contentDescription = null) },
+                                        onClick = {
+                                            menuRepoKey = null
+                                            vm.makeAvailableOffline(r.owner, r.name, r.branch, r.id)
+                                        },
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
             }

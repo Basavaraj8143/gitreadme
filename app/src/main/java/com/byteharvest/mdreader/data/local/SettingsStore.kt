@@ -6,23 +6,71 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.security.MessageDigest
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class ReaderThemeMode { APP, LIGHT, DARK }
+
+data class ReaderPosition(val index: Int = 0, val offset: Int = 0)
+data class SettingsSnapshot(
+    val theme: ThemeMode,
+    val readerTheme: ReaderThemeMode,
+    val fontSizeSp: Float,
+)
 
 private val Context.settingsDataStore by preferencesDataStore("settings")
 
 class SettingsStore(private val context: Context) {
     private val themeKey = stringPreferencesKey("theme")
+    private val readerThemeKey = stringPreferencesKey("reader_theme")
     private val fontKey = floatPreferencesKey("font_sp")
 
     val theme: Flow<ThemeMode> = context.settingsDataStore.data.map { p ->
         runCatching { ThemeMode.valueOf(p[themeKey] ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM)
     }
+    val readerTheme: Flow<ReaderThemeMode> = context.settingsDataStore.data.map { p ->
+        runCatching { ReaderThemeMode.valueOf(p[readerThemeKey] ?: "DARK") }.getOrDefault(ReaderThemeMode.DARK)
+    }
     val fontSizeSp: Flow<Float> = context.settingsDataStore.data.map { it[fontKey] ?: DEFAULT_FONT }
 
     suspend fun setTheme(mode: ThemeMode) { context.settingsDataStore.edit { it[themeKey] = mode.name } }
+    suspend fun setReaderTheme(mode: ReaderThemeMode) { context.settingsDataStore.edit { it[readerThemeKey] = mode.name } }
     suspend fun setFontSize(sp: Float) { context.settingsDataStore.edit { it[fontKey] = sp.coerceIn(MIN_FONT, MAX_FONT) } }
+
+    suspend fun readerPosition(repoId: String, path: String): ReaderPosition {
+        val value = context.settingsDataStore.data.first()[positionKey(repoId, path)] ?: return ReaderPosition()
+        val parts = value.split(':', limit = 2)
+        return ReaderPosition(
+            index = parts.getOrNull(0)?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+            offset = parts.getOrNull(1)?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+        )
+    }
+
+    suspend fun saveReaderPosition(repoId: String, path: String, index: Int, offset: Int) {
+        context.settingsDataStore.edit {
+            it[positionKey(repoId, path)] = "${index.coerceAtLeast(0)}:${offset.coerceAtLeast(0)}"
+        }
+    }
+
+    suspend fun snapshot(): SettingsSnapshot {
+        val prefs = context.settingsDataStore.data.first()
+        return SettingsSnapshot(
+            theme = runCatching { ThemeMode.valueOf(prefs[themeKey] ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM),
+            readerTheme = runCatching { ReaderThemeMode.valueOf(prefs[readerThemeKey] ?: "DARK") }
+                .getOrDefault(ReaderThemeMode.DARK),
+            fontSizeSp = (prefs[fontKey] ?: DEFAULT_FONT).coerceIn(MIN_FONT, MAX_FONT),
+        )
+    }
+
+    private fun positionKey(repoId: String, path: String) = stringPreferencesKey(
+        "reading_position_${sha256("$repoId\u0000$path")}"
+    )
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     companion object {
         const val DEFAULT_FONT = 16f

@@ -4,38 +4,58 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
+import com.byteharvest.mdreader.R
 import com.byteharvest.mdreader.data.local.RecentDoc
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.DocListItem
@@ -47,6 +67,126 @@ import kotlinx.coroutines.flow.stateIn
 import java.io.File
 
 data class OpenState(val loading: Boolean = false, val error: String? = null)
+
+@Composable
+private fun HomeHero(onOpenGitHub: () -> Unit, onOpenFile: () -> Unit) {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (dark) Color(0xFFF9F6FF) else Color(0xFF211448)
+    val bodyColor = if (dark) Color(0xFFE0D7F5) else Color(0xFF594B7B)
+    val accent = if (dark) Color(0xFF4A3291) else Color(0xFF6B4BD1)
+    val buttonText = if (dark) Color(0xFF211448) else Color.White
+    val outlineColor = if (dark) Color(0xFFE6DFFF) else Color(0xFF6549BD)
+    val cardShape = RoundedCornerShape(28.dp)
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(cardShape)
+            .background(
+                Brush.linearGradient(
+                    if (dark) listOf(Color(0xFF402C83), Color(0xFF271951))
+                    else listOf(Color(0xFFF3ECFF), Color(0xFFE9DEFF)),
+                )
+            )
+    ) {
+        ReadingStackIllustration(
+            dark = dark,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp),
+        )
+        Column(
+            Modifier.fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Filled.Description,
+                contentDescription = null,
+                tint = if (dark) Color(0xFFF4EEFF) else Color(0xFF6141BD),
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                "Make room for\ngood reading.",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = titleColor,
+                modifier = Modifier.widthIn(max = 245.dp),
+            )
+            Text(
+                "Open a GitHub repository or bring in a Markdown file to get started.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = bodyColor,
+                modifier = Modifier.widthIn(max = 270.dp),
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onOpenGitHub,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (dark) Color(0xFFF8F5FF) else accent, contentColor = buttonText),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_github_mark),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text("GitHub", Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = onOpenFile,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(1.25.dp, outlineColor.copy(alpha = 0.8f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (dark) Color.White else Color(0xFF51369E)),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text("Open file", Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadingStackIllustration(dark: Boolean, modifier: Modifier = Modifier) {
+    val backSheet = if (dark) Color(0xFF9679EA).copy(alpha = 0.58f) else Color(0xFFB7A0F2).copy(alpha = 0.48f)
+    val frontSheet = if (dark) Color(0xFFFFFCFF) else Color(0xFFFFFFFF)
+    val lineColor = if (dark) Color(0xFFB8A7E9) else Color(0xFFC9B9F5)
+
+    Box(modifier.size(width = 112.dp, height = 132.dp)) {
+        Surface(
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 8.dp)
+                .size(width = 70.dp, height = 100.dp).graphicsLayer(rotationZ = 13f),
+            shape = RoundedCornerShape(10.dp),
+            color = backSheet,
+        ) {
+            Column(
+                Modifier.padding(start = 14.dp, top = 22.dp, end = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                repeat(3) { Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(4.dp)).background(lineColor.copy(alpha = 0.72f))) }
+            }
+        }
+        Surface(
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 2.dp)
+                .size(width = 68.dp, height = 92.dp).graphicsLayer(rotationZ = -11f),
+            shape = RoundedCornerShape(10.dp),
+            color = frontSheet,
+            shadowElevation = 8.dp,
+        ) {
+            Column(
+                Modifier.padding(start = 13.dp, top = 25.dp, end = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                repeat(3) { Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(4.dp)).background(lineColor)) }
+            }
+        }
+    }
+}
 
 class HomeViewModel(c: AppContainer) : ViewModel() {
     val recent: StateFlow<List<RecentDoc>?> =
@@ -95,37 +235,49 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Read.md", fontWeight = FontWeight.Bold) },
+                title = { Text("Gitread.me", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = onOpenGitHub) { Icon(Icons.Filled.Code, contentDescription = "Open from GitHub") }
+                    IconButton(onClick = onOpenGitHub) {
+                        Icon(
+                            painterResource(R.drawable.ic_github_mark),
+                            contentDescription = "Open from GitHub",
+                        )
+                    }
                     IconButton(onClick = onBookmarks) { Icon(Icons.Filled.BookmarkBorder, contentDescription = "Bookmarks") }
                     IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, contentDescription = "Settings") }
                 },
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { localFileLauncher.launch(arrayOf("text/markdown", "application/markdown")) },
-                icon = { Icon(Icons.Filled.FolderOpen, contentDescription = null) },
-                text = { Text("Open File") },
-            )
-        },
     ) { pad ->
         LazyColumn(
             Modifier.fillMaxSize().padding(pad),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text("Recent Files", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+                HomeHero(
+                    onOpenGitHub = onOpenGitHub,
+                    onOpenFile = { localFileLauncher.launch(arrayOf("text/markdown", "application/markdown")) },
+                )
+            }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Recently opened", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    recent?.takeIf { it.isNotEmpty() }?.let { documents ->
+                        Text("${documents.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             val list = recent
             if (list != null && list.isEmpty()) {
                 item {
                     EmptyState(
                         Icons.Filled.Inbox, "Nothing read yet",
-                        "Tap the GitHub icon above to open a repository, or the bottom button to open a local file.",
-                        Modifier.fillMaxWidth().padding(top = 24.dp),
+                        "Your reading history will show up here.",
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
                 }
             } else if (list != null) {

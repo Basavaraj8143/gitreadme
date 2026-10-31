@@ -69,3 +69,13 @@ data class BookmarkItem(
     val repoId: String, val path: String, val title: String, val createdAt: Long,
     val owner: String, val repoName: String, val branch: String,
 )
+
+data class OfflineRepositoryItem(
+    val repoId: String,
+    val owner: String,
+    val repoName: String,
+    val branch: String,
+    val description: String?,
+    val totalDocs: Int,
+    val cachedDocs: Int,
+)

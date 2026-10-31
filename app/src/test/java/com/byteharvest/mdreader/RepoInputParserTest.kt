@@ -3,6 +3,7 @@ package com.byteharvest.mdreader
 import com.byteharvest.mdreader.core.ParseResult
 import com.byteharvest.mdreader.core.RepoInputParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,6 +20,12 @@ class RepoInputParserTest {
     @Test fun treeUrlGivesBranchAndPath() {
         val i = ok("https://github.com/o/r/tree/dev/docs/x")
         assertEquals("dev", i.branch); assertEquals("docs/x", i.path)
+        assertFalse(i.isFile)
+    }
+    @Test fun blobUrlGivesFilePath() {
+        val i = ok("https://github.com/o/r/blob/main/docs/README.md")
+        assertEquals("main", i.branch); assertEquals("docs/README.md", i.path)
+        assertTrue(i.isFile)
     }
     @Test fun plainRepoHasNoBranch() { assertNull(ok("o/r").branch) }
     @Test fun unsupportedHost() { assertTrue(isError("https://gitlab.com/o/r")) }

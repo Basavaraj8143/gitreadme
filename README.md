@@ -1,4 +1,4 @@
-# MdReader
+# Gitread.me
 
 Free, open-source native Android reader for Markdown in GitHub repositories. Kotlin, Jetpack Compose, Material 3.
 
@@ -13,8 +13,15 @@ Free, open-source native Android reader for Markdown in GitHub repositories. Kot
 Settings -> paste a fine-grained personal access token (read-only Contents + Metadata, only the repos you need).
 Stored encrypted (Android Keystore). Signing out deletes the token and cached private repositories.
 
+## Offline reading and backup
+- In Open from GitHub, use a repository's three-dot menu -> Make available offline. You can also download repositories from Settings -> Manage saved repositories. Files over 1,000,000 characters are skipped.
+- The Bookmarks screen has tabs for bookmarked files and repositories whose Markdown files are all cached for offline reading.
+- Reader position is saved per document and restored when you open it again.
+- Settings -> Backup exports theme, reader appearance, font size, and bookmarks as JSON. Tokens and cached documents are never included.
+- To restore bookmarks on another device, save the matching repositories there first, then import the JSON backup.
+
 ## Known limitations
-- Code blocks have no syntax colouring (monospace, horizontal scroll).
+- Code syntax colors are lightweight highlighting, not a full language parser.
 - Search: all matches are highlighted; "current match" is shown at block level.
 - Paragraph images are laid out below their paragraph text; HTML other than `<img>` is reduced to text.
 - Links to another document drop the `#anchor`.

@@ -2,6 +2,9 @@ package com.byteharvest.mdreader.ui
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -32,7 +35,14 @@ object Routes {
 fun AppNav() {
     val nav = rememberNavController()
     val strArg = { name: String -> navArgument(name) { type = NavType.StringType } }
-    NavHost(nav, startDestination = Routes.HOME) {
+    NavHost(
+        navController = nav,
+        startDestination = Routes.HOME,
+        enterTransition = { fadeIn(animationSpec = tween(180)) },
+        exitTransition = { fadeOut(animationSpec = tween(140)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(180)) },
+        popExitTransition = { fadeOut(animationSpec = tween(140)) },
+    ) {
         composable(Routes.HOME) {
             HomeScreen(
                 onOpenGitHub = { nav.navigate(Routes.openGitHub()) },
@@ -44,7 +54,7 @@ fun AppNav() {
         composable(Routes.OPEN_GITHUB) {
             OpenGitHubScreen(
                 onBack = { nav.popBackStack() },
-                onOpenRepo = { nav.navigate(Routes.browser(it)) },
+                onOpenRepo = { id, dir -> nav.navigate(Routes.browser(id, dir)) },
                 onOpenDoc = { id, p -> nav.navigate(Routes.reader(id, p)) },
             )
         }
@@ -66,7 +76,11 @@ fun AppNav() {
             RepositoriesScreen(onBack = { nav.popBackStack() }, onOpenRepo = { nav.navigate(Routes.browser(it)) })
         }
         composable(Routes.BOOKMARKS) {
-            BookmarksScreen(onBack = { nav.popBackStack() }, onOpenDoc = { id, p -> nav.navigate(Routes.reader(id, p)) })
+            BookmarksScreen(
+                onBack = { nav.popBackStack() },
+                onOpenDoc = { id, p -> nav.navigate(Routes.reader(id, p)) },
+                onOpenRepo = { nav.navigate(Routes.browser(it)) },
+            )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = { nav.popBackStack() }, onRepos = { nav.navigate(Routes.REPOS) })

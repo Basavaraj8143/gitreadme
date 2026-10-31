@@ -12,7 +12,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Stores the GitHub token as AES-256-GCM ciphertext. The key lives in the Android Keystore and never
- * leaves it; SharedPreferences only holds IV + ciphertext. The token is never logged.
+ * leaves it; SharedPreferences holds the IV, ciphertext, and non-secret account login. The token is never logged.
  */
 class TokenStore(context: Context) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
@@ -31,14 +31,17 @@ class TokenStore(context: Context) {
         return gen.generateKey()
     }
 
-    fun save(token: String) {
+    fun save(token: String, username: String? = null) {
         val cipher = Cipher.getInstance(TRANSFORM).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val enc = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
-        prefs.edit()
+        val editor = prefs.edit()
             .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString("ct", Base64.encodeToString(enc, Base64.NO_WRAP))
-            .apply()
+        if (username != null) editor.putString("username", username)
+        editor.apply()
     }
+
+    fun username(): String? = prefs.getString("username", null)
 
     fun load(): String? {
         val iv = prefs.getString("iv", null) ?: return null

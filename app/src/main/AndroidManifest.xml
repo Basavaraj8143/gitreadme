@@ -4,9 +4,11 @@
     <application
         android:name=".App"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MdReader">
+        android:theme="@style/Theme.GitreadMe">
         <activity
             android:name=".MainActivity"
             android:exported="true"
