@@ -27,7 +27,7 @@ Gitread.me is a native Android app for reading Markdown documents from GitHub re
 - When signed in, browse repositories available to the authenticated GitHub account.
 - Browse Markdown files in folders, filter paths by name, switch branches, and manually refresh repository data.
 - Open a local `.md` file through Android's document picker. The app copies the selected file into its private app storage before displaying it.
-- See recently opened GitHub documents on the home screen.
+- See recently opened GitHub and local documents on the home screen.
 
 ### Read Markdown
 
@@ -60,7 +60,7 @@ Offline availability covers Markdown document text only. It does not download re
 - Sign in with a GitHub fine-grained personal access token to access private repositories and increase API rate limits.
 - Export or import a JSON backup containing the app theme, reader appearance, font size, and bookmarks.
 
-Backups intentionally exclude access tokens, cached documents, repository contents, and reading positions. To restore bookmarks, first save the corresponding repositories and branches on the destination device; import adds bookmarks for repositories it can match.
+Backups intentionally exclude access tokens, cached documents, local-file bookmarks, repository contents, and reading positions. To restore GitHub bookmarks, first save the corresponding repositories and branches on the destination device; import adds bookmarks for repositories it can match.
 
 ## How it works
 
@@ -89,7 +89,7 @@ For the freshest offline copy, refresh the repository while online and then run 
 - Search highlights matches and scrolls to the matching block.
 - The table of contents and same-document heading links scroll to the corresponding heading.
 - Scroll position is saved per repository/document (or local file) in Android DataStore and restored the next time it is opened.
-- Local `.md` files are copied to the app's private `files/local_docs` directory before opening. They do not appear in the GitHub reading history and cannot be bookmarked.
+- Local `.md` files are copied to the app's private `files/local_docs` directory before opening. They appear in recent documents and can be bookmarked on this device. Local file bookmarks are excluded from backups because their app-private paths are not portable to another device.
 
 ### Authentication flow
 
@@ -141,8 +141,8 @@ Room stores these main tables:
 | `repositories` | Owner, repository, branch, privacy flag, timestamps, and sync status. |
 | `tree_entries` | Markdown file paths and Git blob SHAs for a repository branch. |
 | `cached_documents` | Raw Markdown text and the SHA it was fetched for. |
-| `bookmarks` | Bookmarked GitHub documents. |
-| `reading_history` | Recently opened GitHub documents. |
+| `bookmarks` | Bookmarked GitHub and local documents. |
+| `reading_history` | Recently opened GitHub and local documents. |
 
 A repository ID is the lowercased `owner/repository` plus `@branch`, so branches are cached independently. Tree entries, documents, bookmarks, and history refer to the repository with cascading foreign keys.
 
@@ -150,7 +150,7 @@ The local database is schema version 1. Schema changes must increment the Room d
 
 ## Technology
 
-- Kotlin **2.0.20**, Android Gradle Plugin **8.5.2**, Gradle **8.9**
+- Kotlin **2.0.20**, Android Gradle Plugin **8.10.0**, Gradle **8.11.1**
 - Jetpack Compose and Material 3; Compose BOM **2024.09.00**
 - AndroidX Navigation Compose, Lifecycle ViewModel/StateFlow, and Kotlin Coroutines
 - Room **2.6.1** with KSP; Preferences DataStore **1.1.1**
@@ -159,19 +159,19 @@ The local database is schema version 1. Schema changes must increment the Room d
 - Coil **2.7.0** with SVG decoding
 - Android `PdfDocument` for PDF export
 
-Android configuration: **min SDK 26**, **target SDK 34**, **compile SDK 34**, Java/Kotlin bytecode target **17**, app version **1.0.0**.
+Android configuration: **min SDK 26**, **target SDK 36**, **compile SDK 36**, Java/Kotlin bytecode target **17**, app version **1.0.0**.
 
 ## Requirements
 
-- Android Studio with Android SDK Platform 34 and Build Tools installed.
+- Android Studio with Android SDK Platform 36 and Build Tools 35.0.0 or newer installed.
 - JDK 17 or newer. Gradle itself must run on JDK 17 or newer; the app's Java/Kotlin bytecode target remains 17.
-- Gradle 8.9 if building from a terminal before the Gradle wrapper has been generated.
+- Gradle 8.11.1 if building from a terminal before the Gradle wrapper has been generated.
 - An Android device or emulator for running the app. A connected device/emulator is also required for instrumentation tests.
 
-The repository currently does not include `gradlew` / `gradlew.bat`. Android Studio can use its configured Gradle installation. To generate a wrapper locally, install Gradle 8.9 and run this from the repository root:
+The repository currently does not include `gradlew` / `gradlew.bat`. Android Studio can use its configured Gradle installation. To generate a wrapper locally, install Gradle 8.11.1 and run this from the repository root:
 
 ```powershell
-gradle wrapper --gradle-version 8.9
+gradle wrapper --gradle-version 8.11.1
 ```
 
 After generating the wrapper, use `.\gradlew.bat` on Windows or `./gradlew` on macOS/Linux.
@@ -181,7 +181,7 @@ After generating the wrapper, use `.\gradlew.bat` on Windows or `./gradlew` on m
 ### Android Studio
 
 1. Open the repository root in Android Studio.
-2. Set Gradle JDK to JDK 17 or newer and install Android SDK Platform 34 if prompted.
+2. Set Gradle JDK to JDK 17 or newer and install Android SDK Platform 36 if prompted.
 3. Sync the project.
 4. Select the `app` run configuration and an Android 8.0 (API 26) or newer device/emulator, then run.
 
@@ -264,7 +264,7 @@ The same download action is available in **Settings → Manage saved repositorie
 - Use the reader toolbar for search, table of contents, and bookmarking.
 - Open **More options** for raw/rendered view, copy Markdown, font-size adjustments, refresh, PDF export/share, and opening the document on GitHub.
 - Set app and reader appearance in Settings. The reader defaults to dark appearance; font size defaults to 16 sp.
-- Local `.md` files can be opened from the home screen. They are copied into app-private storage and are not part of repository bookmarks or history.
+- Local `.md` files can be opened from the home screen. They are copied into app-private storage, appear in recent documents, and can be bookmarked on this device.
 
 ## GitHub access and privacy
 

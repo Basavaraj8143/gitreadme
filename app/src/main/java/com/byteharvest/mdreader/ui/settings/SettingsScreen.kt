@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.data.local.ReaderThemeMode
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.repository.BookmarkBackup
@@ -84,7 +85,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     suspend fun exportBackup(uri: Uri): String = withContext(Dispatchers.IO) {
         try {
             val settings = c.settings.snapshot()
-            val bookmarks = c.repository.bookmarks().first()
+            val bookmarks = c.repository.bookmarks().first().filter { it.repoId != LOCAL_REPOSITORY_ID }
             val root = JSONObject()
                 .put("formatVersion", 1)
                 .put("exportedAt", System.currentTimeMillis())

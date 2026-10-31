@@ -352,12 +352,16 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                     }
                 }
                 doc != null -> Column {
-                    state.notice?.let {
-                        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                            Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                    SelectionContainer {
+                        Column {
+                            state.notice?.let {
+                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+                                    Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            MarkdownBlocks(doc, listState, ctx)
                         }
                     }
-                    MarkdownBlocks(doc, listState, ctx)
                 }
             }
         }

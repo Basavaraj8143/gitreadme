@@ -15,6 +15,7 @@ import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.remote.GitHubUrls
 import com.byteharvest.mdreader.data.repository.DocLoad
 import com.byteharvest.mdreader.domain.LinkResolver
@@ -45,7 +46,7 @@ data class SearchState(val query: String = "", val matches: List<Int> = emptyLis
 class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : ViewModel() {
     val repoId = navArg(handle, "repoId")
     val path = navArg(handle, "path")
-    val title = if (repoId == "local") {
+    val title = if (repoId == LOCAL_REPOSITORY_ID) {
         val rawName = path.substringAfterLast('/')
         if (rawName.contains('_')) rawName.substringAfter('_') else rawName
     } else {
@@ -67,15 +68,11 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
     val appTheme: StateFlow<ThemeMode> =
         c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
-    val bookmarked: StateFlow<Boolean> = if (repoId == "local") {
-        MutableStateFlow(false)
-    } else {
-        c.repository.isBookmarked(repoId, path).map { it > 0 }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    }
+    val bookmarked: StateFlow<Boolean> = c.repository.isBookmarked(repoId, path).map { it > 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     init {
-        if (repoId == "local") {
+        if (repoId == LOCAL_REPOSITORY_ID) {
             loadLocalDoc()
         } else {
             viewModelScope.launch { _repo.value = c.repository.repo(repoId) }
@@ -84,7 +81,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     }
 
     fun load(force: Boolean) {
-        if (repoId == "local") {
+        if (repoId == LOCAL_REPOSITORY_ID) {
             loadLocalDoc()
             return
         }
@@ -112,6 +109,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
                 }
                 val doc = withContext(Dispatchers.Default) { engine.parse(text) }
                 _state.value = ReaderState(loading = false, doc = doc, rawMarkdown = text)
+                c.repository.recordHistory(repoId, path, title)
                 setQuery(_search.value.query)
             } catch (e: Exception) {
                 _state.value = ReaderState(loading = false, error = e.message ?: "Could not read local file.")
@@ -142,7 +140,6 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     }
 
     fun toggleBookmark() {
-        if (repoId == "local") return
         viewModelScope.launch { c.repository.toggleBookmark(repoId, path, title, bookmarked.value) }
     }
 
@@ -157,7 +154,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     }
 
     suspend fun exists(p: String): Boolean {
-        if (repoId == "local") return false
+        if (repoId == LOCAL_REPOSITORY_ID) return false
         return c.repository.hasFile(repoId, p)
     }
 
@@ -169,7 +166,7 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
         val s = src.trim()
         if (s.startsWith("http://") || s.startsWith("https://")) return ImageSpec(s, emptyMap(), true)
         if (s.startsWith("//")) return ImageSpec("https:$s", emptyMap(), true)
-        if (repoId == "local") return null
+        if (repoId == LOCAL_REPOSITORY_ID) return null
         val r = _repo.value ?: return null
         val resolved = LinkResolver.resolveRepoRef(path, s) ?: return null
         if (!r.isPrivate) return ImageSpec(GitHubUrls.raw(r.owner, r.name, r.branch, resolved).toString(), emptyMap(), true)

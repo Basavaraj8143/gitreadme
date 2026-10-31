@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.data.local.BookmarkItem
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.OfflineRepositoryItem
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.DocListItem
@@ -96,7 +97,11 @@ fun BookmarksScreen(
                         items(list, key = { "${it.repoId}|${it.path}" }) { b ->
                             DocListItem(
                                 title = b.title,
-                                subtitle = "${b.owner}/${b.repoName} · ${b.path}",
+                                subtitle = if (b.repoId == LOCAL_REPOSITORY_ID) {
+                                    "On this device · Local Markdown file"
+                                } else {
+                                    "${b.owner}/${b.repoName} · ${b.path}"
+                                },
                                 icon = Icons.Filled.Bookmark,
                                 onClick = { onOpenDoc(b.repoId, b.path) },
                                 trailingContent = { IconButton({ vm.remove(b) }) { Icon(Icons.Filled.Delete, "Remove bookmark") } },

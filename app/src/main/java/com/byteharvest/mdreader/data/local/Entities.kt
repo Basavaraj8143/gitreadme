@@ -5,6 +5,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+const val LOCAL_REPOSITORY_ID = "local"
+
 /** id = "owner/name@branch" (owner/name lower-cased), so branches of one repo never mix. */
 @Entity(tableName = "repositories")
 data class RepositoryEntity(

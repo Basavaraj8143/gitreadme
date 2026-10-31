@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 /** All writes use @Upsert (never REPLACE) because REPLACE would cascade-delete child rows. */
 @Dao
 interface AppDao {
-    @Query("SELECT * FROM repositories ORDER BY lastOpenedAt DESC")
+    @Query("SELECT * FROM repositories WHERE id != 'local' ORDER BY lastOpenedAt DESC")
     fun repositories(): Flow<List<RepositoryEntity>>
 
     @Query(

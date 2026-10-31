@@ -56,6 +56,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.R
+import com.byteharvest.mdreader.core.localDocumentFileName
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.RecentDoc
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.DocListItem
@@ -222,10 +224,10 @@ fun HomeScreen(
                     ?: throw IllegalStateException("Could not read file")
 
                 val localDir = File(context.filesDir, "local_docs").apply { mkdirs() }
-                val targetFile = File(localDir, "${System.currentTimeMillis()}_$name")
+                val targetFile = File(localDir, localDocumentFileName(uri.toString(), name))
                 targetFile.writeText(text)
 
-                onOpenDoc("local", targetFile.absolutePath)
+                onOpenDoc(LOCAL_REPOSITORY_ID, targetFile.absolutePath)
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to open file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -284,7 +286,11 @@ fun HomeScreen(
                 items(list, key = { "${it.repoId}|${it.path}" }) { d ->
                     DocListItem(
                         title = d.path.substringAfterLast('/'),
-                        subtitle = "${d.owner}/${d.repoName} · ${d.path}",
+                        subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
+                            "On this device · Local Markdown file"
+                        } else {
+                            "${d.owner}/${d.repoName} · ${d.path}"
+                        },
                         icon = Icons.Filled.Description,
                         trailing = relativeTime(d.lastOpenedAt),
                         onClick = { onOpenDoc(d.repoId, d.path) },

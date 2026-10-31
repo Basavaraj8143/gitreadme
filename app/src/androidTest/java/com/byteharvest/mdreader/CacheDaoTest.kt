@@ -6,9 +6,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.byteharvest.mdreader.data.local.AppDatabase
 import com.byteharvest.mdreader.data.local.CachedDocumentEntity
+import com.byteharvest.mdreader.data.local.BookmarkEntity
+import com.byteharvest.mdreader.data.local.HistoryEntity
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.local.TreeEntryEntity
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -57,5 +61,30 @@ class CacheDaoTest {
         assertNull(dao.doc("a", "x.md"))
         assertNull(dao.treeSha("a", "x.md"))
         assertEquals("B", dao.doc("b", "x.md")?.content)
+    }
+
+    @Test fun localFilesAppearInHistoryAndBookmarksButNotRepositoryList() = runBlocking {
+        val dao = db.dao()
+        val now = System.currentTimeMillis()
+        dao.upsertRepo(
+            RepositoryEntity(
+                id = LOCAL_REPOSITORY_ID,
+                owner = "On this device",
+                name = "Local files",
+                branch = "local",
+                description = null,
+                isPrivate = false,
+                addedAt = now,
+                lastOpenedAt = now,
+                lastSyncAt = null,
+                syncState = "OK",
+            )
+        )
+        dao.upsertHistory(HistoryEntity(LOCAL_REPOSITORY_ID, "/private/local_docs/123_guide.md", "guide.md", now))
+        dao.upsertBookmark(BookmarkEntity(LOCAL_REPOSITORY_ID, "/private/local_docs/123_guide.md", "guide.md", now))
+
+        assertEquals(0, dao.repositories().first().size)
+        assertEquals("On this device", dao.recent(10).first().single().owner)
+        assertEquals("guide.md", dao.bookmarks().first().single().title)
     }
 }

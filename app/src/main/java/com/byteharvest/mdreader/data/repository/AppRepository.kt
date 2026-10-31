@@ -7,6 +7,7 @@ import com.byteharvest.mdreader.data.local.AppDatabase
 import com.byteharvest.mdreader.data.local.BookmarkEntity
 import com.byteharvest.mdreader.data.local.CachedDocumentEntity
 import com.byteharvest.mdreader.data.local.HistoryEntity
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.OfflineRepositoryItem
 import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.local.TreeEntryEntity
@@ -218,13 +219,34 @@ class AppRepository(
 
     suspend fun recordHistory(id: String, path: String, title: String) {
         val now = System.currentTimeMillis()
+        if (id == LOCAL_REPOSITORY_ID && dao.repo(id) == null) {
+            dao.upsertRepo(
+                RepositoryEntity(
+                    id = LOCAL_REPOSITORY_ID,
+                    owner = "On this device",
+                    name = "Local files",
+                    branch = "local",
+                    description = null,
+                    isPrivate = false,
+                    addedAt = now,
+                    lastOpenedAt = now,
+                    lastSyncAt = null,
+                    syncState = "OK",
+                )
+            )
+        }
         dao.upsertHistory(HistoryEntity(id, path, title, now))
         dao.touchRepo(id, now)
     }
 
     suspend fun toggleBookmark(id: String, path: String, title: String, currentlyBookmarked: Boolean) {
         if (currentlyBookmarked) dao.deleteBookmark(id, path)
-        else dao.upsertBookmark(BookmarkEntity(id, path, title, System.currentTimeMillis()))
+        else {
+            if (id == LOCAL_REPOSITORY_ID && dao.repo(id) == null) {
+                recordHistory(id, path, title)
+            }
+            dao.upsertBookmark(BookmarkEntity(id, path, title, System.currentTimeMillis()))
+        }
     }
 
     suspend fun removeBookmark(id: String, path: String) = dao.deleteBookmark(id, path)
