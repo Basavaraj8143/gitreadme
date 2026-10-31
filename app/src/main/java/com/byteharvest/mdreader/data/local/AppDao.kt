@@ -85,6 +85,9 @@ interface AppDao {
 
     @Upsert suspend fun upsertHistory(h: HistoryEntity)
 
+    @Query("DELETE FROM reading_history WHERE repoId = :repoId AND path = :path")
+    suspend fun deleteHistory(repoId: String, path: String)
+
     @Query(
         "SELECT h.repoId AS repoId, h.path AS path, h.title AS title, h.lastOpenedAt AS lastOpenedAt, " +
             "r.owner AS owner, r.name AS repoName, r.branch AS branch " +

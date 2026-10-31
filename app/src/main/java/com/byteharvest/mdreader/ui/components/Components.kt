@@ -1,6 +1,8 @@
 package com.byteharvest.mdreader.ui.components
 
 import android.text.format.DateUtils
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,12 +64,14 @@ fun ErrorBox(message: String, modifier: Modifier = Modifier.fillMaxSize(), onRet
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun DocListItem(
     title: String,
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     trailing: String? = null,
     trailingContent: @Composable (() -> Unit)? = null,
 ) {
@@ -79,7 +83,13 @@ fun DocListItem(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(shape)
-            .clickable(onClick = onClick),
+            .then(
+                if (onLongClick == null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                }
+            ),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),

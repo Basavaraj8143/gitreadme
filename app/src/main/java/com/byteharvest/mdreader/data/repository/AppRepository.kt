@@ -68,6 +68,7 @@ class AppRepository(
     suspend fun repo(id: String) = dao.repo(id)
     fun treePaths(id: String) = dao.treePaths(id)
     fun recentDocs(limit: Int) = dao.recent(limit)
+    suspend fun removeFromHistory(repoId: String, path: String) = dao.deleteHistory(repoId, path)
     fun bookmarks() = dao.bookmarks()
     fun isBookmarked(id: String, path: String) = dao.isBookmarked(id, path)
     suspend fun touch(id: String) = dao.touchRepo(id, System.currentTimeMillis())

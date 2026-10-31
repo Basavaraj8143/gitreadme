@@ -67,6 +67,7 @@ import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.core.ParseResult
 import com.byteharvest.mdreader.core.RepoInputParser
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.RecentDoc
 import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.remote.RepoDto
@@ -305,7 +306,7 @@ fun OpenGitHubScreen(
             }
 
             // Recent Section
-            val list = recent
+            val list = recent?.filterNot { it.repoId == LOCAL_REPOSITORY_ID }
             if (!list.isNullOrEmpty()) {
                 item {
                     Text("Recent", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))

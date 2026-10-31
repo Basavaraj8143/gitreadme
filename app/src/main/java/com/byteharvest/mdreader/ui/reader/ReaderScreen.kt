@@ -74,6 +74,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byteharvest.mdreader.domain.LinkResolver
 import com.byteharvest.mdreader.domain.LinkTarget
 import com.byteharvest.mdreader.domain.isMarkdownPath
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.ui.appViewModel
@@ -297,7 +298,12 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                             )
                             DropdownMenuItem(text = { Text("Larger text") }, onClick = { vm.changeFont(+2f) })
                             DropdownMenuItem(text = { Text("Smaller text") }, onClick = { vm.changeFont(-2f) })
-                            DropdownMenuItem(text = { Text("Refresh") }, onClick = { menu = false; vm.load(true) })
+                            if (vm.repoId != LOCAL_REPOSITORY_ID) {
+                                DropdownMenuItem(
+                                    text = { Text("Refresh") },
+                                    onClick = { menu = false; vm.load(true) },
+                                )
+                            }
                             DropdownMenuItem(text = { Text("Save as PDF") }, enabled = doc != null, onClick = {
                                 menu = false
                                 saveLauncher.launch(vm.title.substringBeforeLast('.') + ".pdf")
@@ -316,7 +322,12 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                                     context.startActivity(Intent.createChooser(send, "Share PDF"))
                                 }
                             })
-                            DropdownMenuItem(text = { Text("Open on GitHub") }, onClick = { menu = false; openUrl(context, vm.githubUrl(vm.path)) })
+                            if (vm.repoId != LOCAL_REPOSITORY_ID) {
+                                DropdownMenuItem(
+                                    text = { Text("Open on GitHub") },
+                                    onClick = { menu = false; openUrl(context, vm.githubUrl(vm.path)) },
+                                )
+                            }
                         }
                     },
                 )

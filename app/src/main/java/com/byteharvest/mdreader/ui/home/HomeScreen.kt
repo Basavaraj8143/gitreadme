@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +53,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,6 +72,7 @@ import com.byteharvest.mdreader.ui.components.relativeTime
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.io.File
 
 data class OpenState(val loading: Boolean = false, val error: String? = null)
@@ -191,8 +198,13 @@ private fun ReadingStackIllustration(dark: Boolean, modifier: Modifier = Modifie
 }
 
 class HomeViewModel(c: AppContainer) : ViewModel() {
+    private val repository = c.repository
     val recent: StateFlow<List<RecentDoc>?> =
-        c.repository.recentDocs(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        repository.recentDocs(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun removeFromRecent(doc: RecentDoc) {
+        viewModelScope.launch { repository.removeFromHistory(doc.repoId, doc.path) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -268,9 +280,6 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("Recently opened", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    recent?.takeIf { it.isNotEmpty() }?.let { documents ->
-                        Text("${documents.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
             }
             val list = recent
@@ -284,17 +293,39 @@ fun HomeScreen(
                 }
             } else if (list != null) {
                 items(list, key = { "${it.repoId}|${it.path}" }) { d ->
-                    DocListItem(
-                        title = d.path.substringAfterLast('/'),
-                        subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
-                            "On this device · Local Markdown file"
-                        } else {
-                            "${d.owner}/${d.repoName} · ${d.path}"
-                        },
-                        icon = Icons.Filled.Description,
-                        trailing = relativeTime(d.lastOpenedAt),
-                        onClick = { onOpenDoc(d.repoId, d.path) },
-                    )
+                    var menuExpanded by remember(d.repoId, d.path) { mutableStateOf(false) }
+                    Box {
+                        DocListItem(
+                            title = d.title,
+                            subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
+                                "On this device · Local Markdown file"
+                            } else {
+                                "${d.owner}/${d.repoName} · ${d.path}"
+                            },
+                            icon = Icons.Filled.Description,
+                            trailing = relativeTime(d.lastOpenedAt),
+                            onLongClick = { menuExpanded = true },
+                            onClick = { onOpenDoc(d.repoId, d.path) },
+                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Remove from recent",
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = TextAlign.End,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    vm.removeFromRecent(d)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

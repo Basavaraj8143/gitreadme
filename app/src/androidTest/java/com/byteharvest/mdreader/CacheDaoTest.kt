@@ -87,4 +87,20 @@ class CacheDaoTest {
         assertEquals("On this device", dao.recent(10).first().single().owner)
         assertEquals("guide.md", dao.bookmarks().first().single().title)
     }
+
+    @Test fun removingRecentHistoryKeepsBookmarksAndCachedDocuments() = runBlocking {
+        val dao = db.dao()
+        dao.upsertRepo(repo("a"))
+        dao.upsertDoc(CachedDocumentEntity("a", "README.md", "sha", "markdown", 1))
+        dao.upsertHistory(HistoryEntity("a", "README.md", "README.md", 1))
+        dao.upsertHistory(HistoryEntity("a", "guide.md", "guide.md", 2))
+        dao.upsertBookmark(BookmarkEntity("a", "README.md", "README.md", 1))
+
+        dao.deleteHistory("a", "README.md")
+
+        assertEquals(listOf("guide.md"), dao.recent(10).first().map { it.path })
+        assertEquals(1, dao.bookmarks().first().size)
+        assertNotNull(dao.doc("a", "README.md"))
+    }
+
 }
