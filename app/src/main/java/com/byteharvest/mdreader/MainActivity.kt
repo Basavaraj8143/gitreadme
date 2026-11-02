@@ -1,5 +1,7 @@
 package com.byteharvest.mdreader
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.graphics.drawable.ColorDrawable
 import androidx.activity.ComponentActivity
@@ -26,8 +28,22 @@ class MainActivity : ComponentActivity() {
                 SideEffect {
                     window.setBackgroundDrawable(ColorDrawable(backgroundColor))
                 }
-                AppNav()
+                AppNav(externalDocumentUri = markdownUriFromIntent(intent))
             }
         }
+    }
+
+    private fun markdownUriFromIntent(intent: Intent): Uri? = when (intent.action) {
+        Intent.ACTION_VIEW -> intent.data ?: intent.clipData?.getItemAt(0)?.uri
+        Intent.ACTION_SEND -> {
+            val sharedUri = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            sharedUri ?: intent.clipData?.getItemAt(0)?.uri
+        }
+        else -> null
     }
 }

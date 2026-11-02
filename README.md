@@ -76,7 +76,7 @@ flowchart LR
 - Open a repository, branch, folder, or Markdown file from a GitHub `tree` or `blob` URL.
 - When signed in, browse repositories available to the authenticated GitHub account.
 - Browse Markdown files in folders, filter paths by name, switch branches, and manually refresh repository data.
-- Open a local `.md` file through Android's document picker. The app copies the selected file into its private app storage before displaying it.
+- Open a local `.md` or `.markdown` file through Android's document picker or an app's **Open with / Share** action. The app copies the selected file into its private app storage before displaying it.
 - See recently opened GitHub and local documents on the home screen.
 
 ### 📚 Read Markdown
@@ -88,6 +88,7 @@ flowchart LR
 - Reader font size from **12 sp to 28 sp**.
 - Case-insensitive search with highlighted matches and next/previous navigation.
 - Table of contents and heading-link navigation.
+- A subtle right-edge scrubber for quickly moving through long rendered documents; it fades away after scrolling and shows the current section while dragging.
 - Bookmark GitHub or local documents, select and copy rendered text, copy a code block or the full Markdown source, and toggle between rendered and raw Markdown.
 - Export the rendered document to PDF, or share a generated PDF.
 - Restores the last reading position for each document.
@@ -210,7 +211,7 @@ The same action is available in **Settings → Manage saved repositories**. Repo
 ### Opening a local Markdown file
 
 1. On the home screen, choose the local file option.
-2. Pick a `.md` file in Android's document picker.
+2. Pick a `.md` or `.markdown` file in Android's document picker, or choose Gitread.me from another app's **Open with / Share** menu.
 3. The app copies it to its private storage (`files/local_docs/`) and opens it.
 
 Local files do not appear in GitHub reading history and cannot be bookmarked.

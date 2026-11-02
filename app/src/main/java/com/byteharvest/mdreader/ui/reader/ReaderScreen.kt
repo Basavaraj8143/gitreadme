@@ -7,20 +7,30 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
@@ -32,8 +42,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Toc
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,45 +56,63 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.byteharvest.mdreader.domain.LinkResolver
-import com.byteharvest.mdreader.domain.LinkTarget
-import com.byteharvest.mdreader.domain.isMarkdownPath
+import com.byteharvest.mdreader.core.markdown.TocEntry
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.ThemeMode
+import com.byteharvest.mdreader.domain.LinkResolver
+import com.byteharvest.mdreader.domain.LinkTarget
+import com.byteharvest.mdreader.domain.isMarkdownPath
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.ErrorBox
 import com.byteharvest.mdreader.ui.components.LoadingBox
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.isSystemInDarkTheme
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private val ReaderDarkColors = darkColorScheme(
     primary = Color(0xFFAAC7FF),
@@ -129,6 +155,135 @@ private fun openUrl(c: Context, url: String) {
     val u = Uri.parse(url)
     if (u.scheme?.lowercase() !in setOf("http", "https", "mailto")) { toast(c, "Unsupported link"); return }
     try { c.startActivity(Intent(Intent.ACTION_VIEW, u)) } catch (e: ActivityNotFoundException) { toast(c, "No app can open this link") }
+}
+
+@Composable
+private fun DocumentScrubber(
+    listState: LazyListState,
+    toc: List<TocEntry>,
+    modifier: Modifier = Modifier,
+) {
+    val layoutInfo by remember { derivedStateOf { listState.layoutInfo } }
+    val totalItems = layoutInfo.totalItemsCount
+    val visibleItems = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+    val visibleItemsState = rememberUpdatedState(visibleItems)
+    val firstVisible = listState.firstVisibleItemIndex
+    val isScrolling = listState.isScrollInProgress
+    val scope = rememberCoroutineScope()
+    var isInteracting by remember { mutableStateOf(false) }
+    var isVisible by remember { mutableStateOf(false) }
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        label = "documentScrubberAlpha",
+    )
+    val density = LocalDensity.current
+
+    LaunchedEffect(isScrolling, isInteracting) {
+        if (isScrolling || isInteracting) {
+            isVisible = true
+            if (!isInteracting) {
+                delay(900)
+                if (!listState.isScrollInProgress) isVisible = false
+            }
+        } else {
+            delay(900)
+            if (!isInteracting) isVisible = false
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .width(36.dp)
+            .fillMaxHeight()
+            .alpha(alpha)
+            .pointerInput(totalItems) {
+                val trackPadding = 24.dp.toPx()
+                val trackHeight = (size.height - trackPadding * 2).coerceAtLeast(1f)
+                var dragY = 0f
+                var scrollJob: Job? = null
+
+                fun jumpTo(y: Float) {
+                    val maxIndex = (totalItems - visibleItemsState.value).coerceAtLeast(0)
+                    if (maxIndex == 0) return
+                    val fraction = ((y - trackPadding) / trackHeight).coerceIn(0f, 1f)
+                    scrollJob?.cancel()
+                    scrollJob = scope.launch { listState.scrollToItem((fraction * maxIndex).toInt()) }
+                }
+
+                detectDragGestures(
+                    onDragStart = { start ->
+                        isInteracting = true
+                        isVisible = true
+                        dragY = start.y
+                        jumpTo(dragY)
+                    },
+                    onDragEnd = { isInteracting = false },
+                    onDragCancel = { isInteracting = false },
+                ) { change, amount ->
+                    change.consume()
+                    dragY = (dragY + amount.y).coerceIn(trackPadding, trackPadding + trackHeight)
+                    jumpTo(dragY)
+                }
+            },
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        val trackPaddingPx = with(density) { 24.dp.toPx() }
+        val trackHeightPx = (with(density) { maxHeight.toPx() } - trackPaddingPx * 2).coerceAtLeast(1f)
+        val safeTrackHeightPx = trackHeightPx.coerceAtLeast(1f)
+        val minThumbHeightPx = with(density) { 36.dp.toPx() }.coerceAtMost(safeTrackHeightPx)
+        val thumbHeightPx = (safeTrackHeightPx * visibleItems / totalItems.coerceAtLeast(1))
+            .coerceIn(minThumbHeightPx, safeTrackHeightPx)
+        val maxIndex = (totalItems - visibleItems).coerceAtLeast(0)
+        val progress = if (maxIndex == 0) 0f else firstVisible.toFloat() / maxIndex
+        val thumbTopPx = trackPaddingPx + (trackHeightPx - thumbHeightPx) * progress
+        val thumbTopDp = with(density) { thumbTopPx.toDp() }
+        val currentHeading = toc.lastOrNull { it.blockIndex <= firstVisible }?.title
+        val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+        val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+
+        Canvas(
+            Modifier.fillMaxSize().semantics {
+                contentDescription = "Document position"
+                stateDescription = "${(progress * 100).toInt()} percent"
+                progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+            },
+        ) {
+            val trackX = size.width - 8.dp.toPx()
+            drawRoundRect(
+                color = trackColor,
+                topLeft = Offset(trackX, trackPaddingPx),
+                size = Size(3.dp.toPx(), trackHeightPx),
+                cornerRadius = CornerRadius(2.dp.toPx()),
+            )
+            drawRoundRect(
+                color = thumbColor,
+                topLeft = Offset(trackX - 0.5.dp.toPx(), thumbTopPx),
+                size = Size(4.dp.toPx(), thumbHeightPx),
+                cornerRadius = CornerRadius(3.dp.toPx()),
+            )
+        }
+
+        if (isInteracting) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 36.dp)
+                    .offset { IntOffset(0, thumbTopDp.roundToPx().coerceAtMost((maxHeight - 48.dp).roundToPx())) },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shadowElevation = 2.dp,
+            ) {
+                Text(
+                    currentHeading ?: "${(progress * 100).toInt()}%",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -362,16 +517,25 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                         }
                     }
                 }
-                doc != null -> Column {
-                    SelectionContainer {
-                        Column {
-                            state.notice?.let {
-                                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                                    Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                doc != null -> Box(Modifier.fillMaxSize()) {
+                    Column {
+                        SelectionContainer {
+                            Column {
+                                state.notice?.let {
+                                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+                                        Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
+                                MarkdownBlocks(doc, listState, ctx)
                             }
-                            MarkdownBlocks(doc, listState, ctx)
                         }
+                    }
+                    if (doc.blocks.size > 1) {
+                        DocumentScrubber(
+                            listState = listState,
+                            toc = doc.toc,
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                        )
                     }
                 }
             }

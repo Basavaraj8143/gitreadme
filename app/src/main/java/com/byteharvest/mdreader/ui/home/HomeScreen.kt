@@ -1,6 +1,5 @@
 package com.byteharvest.mdreader.ui.home
 
-import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.R
-import com.byteharvest.mdreader.core.localDocumentFileName
+import com.byteharvest.mdreader.core.importLocalMarkdown
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.RecentDoc
 import com.byteharvest.mdreader.ui.appViewModel
@@ -73,7 +73,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
 
 data class OpenState(val loading: Boolean = false, val error: String? = null)
 
@@ -218,30 +217,16 @@ fun HomeScreen(
     val vm = appViewModel { c, _ -> HomeViewModel(c) }
     val recent by vm.recent.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val localFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            try {
-                val cursor = context.contentResolver.query(uri, null, null, null, null)
-                val name = cursor?.use {
-                    val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (it.moveToFirst() && idx >= 0) it.getString(idx) else null
-                } ?: "document.md"
-
-                if (!name.endsWith(".md", ignoreCase = true)) {
-                    Toast.makeText(context, "Please select a Markdown (.md) file", Toast.LENGTH_SHORT).show()
-                    return@rememberLauncherForActivityResult
+            scope.launch {
+                try {
+                    val targetFile = importLocalMarkdown(context, uri)
+                    onOpenDoc(LOCAL_REPOSITORY_ID, targetFile.absolutePath)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to open file: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
-
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: throw IllegalStateException("Could not read file")
-
-                val localDir = File(context.filesDir, "local_docs").apply { mkdirs() }
-                val targetFile = File(localDir, localDocumentFileName(uri.toString(), name))
-                targetFile.writeText(text)
-
-                onOpenDoc(LOCAL_REPOSITORY_ID, targetFile.absolutePath)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to open file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }

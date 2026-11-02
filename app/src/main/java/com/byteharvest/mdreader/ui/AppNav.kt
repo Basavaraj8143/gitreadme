@@ -1,7 +1,9 @@
 package com.byteharvest.mdreader.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -10,6 +12,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.ui.platform.LocalContext
+import com.byteharvest.mdreader.core.importLocalMarkdown
+import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.ui.bookmarks.BookmarksScreen
 import com.byteharvest.mdreader.ui.browser.BrowserScreen
 import com.byteharvest.mdreader.ui.home.HomeScreen
@@ -32,8 +37,25 @@ object Routes {
 }
 
 @Composable
-fun AppNav() {
+fun AppNav(externalDocumentUri: Uri? = null) {
     val nav = rememberNavController()
+    val context = LocalContext.current
+
+    LaunchedEffect(externalDocumentUri) {
+        externalDocumentUri?.let { uri ->
+            try {
+                val file = importLocalMarkdown(context, uri)
+                nav.navigate(Routes.reader(LOCAL_REPOSITORY_ID, file.absolutePath))
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Could not open Markdown file: ${e.message}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     val strArg = { name: String -> navArgument(name) { type = NavType.StringType } }
     NavHost(
         navController = nav,
