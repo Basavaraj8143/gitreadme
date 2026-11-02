@@ -2,6 +2,7 @@ package com.byteharvest.mdreader.data.local
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,7 @@ data class SettingsSnapshot(
     val theme: ThemeMode,
     val readerTheme: ReaderThemeMode,
     val fontSizeSp: Float,
+    val renderedTextSelectionEnabled: Boolean,
 )
 
 private val Context.settingsDataStore by preferencesDataStore("settings")
@@ -26,6 +28,7 @@ class SettingsStore(private val context: Context) {
     private val themeKey = stringPreferencesKey("theme")
     private val readerThemeKey = stringPreferencesKey("reader_theme")
     private val fontKey = floatPreferencesKey("font_sp")
+    private val renderedTextSelectionKey = booleanPreferencesKey("rendered_text_selection")
 
     val theme: Flow<ThemeMode> = context.settingsDataStore.data.map { p ->
         runCatching { ThemeMode.valueOf(p[themeKey] ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM)
@@ -34,10 +37,15 @@ class SettingsStore(private val context: Context) {
         runCatching { ReaderThemeMode.valueOf(p[readerThemeKey] ?: "DARK") }.getOrDefault(ReaderThemeMode.DARK)
     }
     val fontSizeSp: Flow<Float> = context.settingsDataStore.data.map { it[fontKey] ?: DEFAULT_FONT }
+    val renderedTextSelectionEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[renderedTextSelectionKey] ?: DEFAULT_RENDERED_TEXT_SELECTION }
 
     suspend fun setTheme(mode: ThemeMode) { context.settingsDataStore.edit { it[themeKey] = mode.name } }
     suspend fun setReaderTheme(mode: ReaderThemeMode) { context.settingsDataStore.edit { it[readerThemeKey] = mode.name } }
     suspend fun setFontSize(sp: Float) { context.settingsDataStore.edit { it[fontKey] = sp.coerceIn(MIN_FONT, MAX_FONT) } }
+    suspend fun setRenderedTextSelectionEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[renderedTextSelectionKey] = enabled }
+    }
 
     suspend fun readerPosition(repoId: String, path: String): ReaderPosition {
         val value = context.settingsDataStore.data.first()[positionKey(repoId, path)] ?: return ReaderPosition()
@@ -61,6 +69,8 @@ class SettingsStore(private val context: Context) {
             readerTheme = runCatching { ReaderThemeMode.valueOf(prefs[readerThemeKey] ?: "DARK") }
                 .getOrDefault(ReaderThemeMode.DARK),
             fontSizeSp = (prefs[fontKey] ?: DEFAULT_FONT).coerceIn(MIN_FONT, MAX_FONT),
+            renderedTextSelectionEnabled =
+                prefs[renderedTextSelectionKey] ?: DEFAULT_RENDERED_TEXT_SELECTION,
         )
     }
 
@@ -76,5 +86,6 @@ class SettingsStore(private val context: Context) {
         const val DEFAULT_FONT = 16f
         const val MIN_FONT = 12f
         const val MAX_FONT = 28f
+        const val DEFAULT_RENDERED_TEXT_SELECTION = true
     }
 }

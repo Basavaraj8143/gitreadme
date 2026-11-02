@@ -89,7 +89,7 @@ flowchart LR
 - Case-insensitive search with highlighted matches and next/previous navigation.
 - Table of contents and heading-link navigation.
 - A subtle right-edge scrubber for quickly moving through long rendered documents; it fades away after scrolling and shows the current section while dragging.
-- Bookmark GitHub or local documents, select and copy rendered text, copy a code block or the full Markdown source, and toggle between rendered and raw Markdown.
+- Bookmark GitHub or local documents, optionally select and copy rendered text (controlled in Settings), copy a code block or the full Markdown source, and toggle between rendered and raw Markdown.
 - Export the rendered document to PDF, or share a generated PDF.
 - Restores the last reading position for each document.
 
@@ -106,12 +106,12 @@ flowchart LR
 ### ⚙️ Settings and backup
 
 - App theme: system, light, or dark.
-- Reader appearance: follow app, light, or dark.
+- Reader appearance: follow app, light, or dark; optionally enable or disable text selection in rendered Markdown.
 - Persistent reader font size.
 - Sign in with a GitHub fine-grained personal access token for private repositories and higher API rate limits.
-- Export or import a JSON backup containing the app theme, reader appearance, font size, and bookmarks.
+- Export or import a JSON backup containing the app theme, reader appearance, font size, rendered-text selection preference, and bookmarks.
 
-> Backups intentionally **exclude** access tokens, cached documents, repository contents, local-file bookmarks, and reading positions. To restore GitHub bookmarks, first save the corresponding repositories and branches on the destination device. Import then adds bookmarks for the repositories it can match.
+> Backups intentionally **exclude** access tokens, cached documents, repository contents, local-file bookmarks, and reading positions. Supported reader and theme settings are included. To restore GitHub bookmarks, first save the corresponding repositories and branches on the destination device. Import then adds bookmarks for the repositories it can match.
 
 ---
 
@@ -497,11 +497,11 @@ erDiagram
 | Data | Location | Notes |
 |---|---|---|
 | Repo metadata, tree, cached Markdown, bookmarks, history | Room database `mdreader.db` | Schema version 1 |
-| App theme, reader appearance, font size, reading positions | Preferences DataStore (`settings`) | |
+| App theme, reader appearance, font size, rendered-text selection, reading positions | Preferences DataStore (`settings`) | |
 | Encrypted token (ciphertext + IV) and GitHub login | Auth preferences | Login is non-secret metadata |
 | Token encryption key | Android Keystore | Never leaves secure hardware or system keystore |
 | Local Markdown files | `files/local_docs/` | App-private storage |
-| Backup JSON | Location you pick via document picker | Theme, reader appearance, font size, bookmarks only |
+| Backup JSON | Location you pick via document picker | Theme, reader appearance, font size, rendered-text selection, bookmarks only |
 
 - Kotlin **2.0.20**, Android Gradle Plugin **8.10.0**, Gradle **8.11.1**
 - Jetpack Compose and Material 3; Compose BOM **2024.09.00**

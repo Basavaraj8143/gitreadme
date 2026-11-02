@@ -66,6 +66,12 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
     val readerTheme: StateFlow<ReaderThemeMode> =
         c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
+    val renderedTextSelectionEnabled: StateFlow<Boolean> =
+        c.settings.renderedTextSelectionEnabled.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SettingsStore.DEFAULT_RENDERED_TEXT_SELECTION,
+        )
     val appTheme: StateFlow<ThemeMode> =
         c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     val bookmarked: StateFlow<Boolean> = c.repository.isBookmarked(repoId, path).map { it > 0 }

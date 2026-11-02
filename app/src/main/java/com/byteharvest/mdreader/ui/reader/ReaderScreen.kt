@@ -313,6 +313,7 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
     val state by vm.state.collectAsStateWithLifecycle()
     val search by vm.search.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
+    val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val bookmarked by vm.bookmarked.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -519,7 +520,7 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                 }
                 doc != null -> Box(Modifier.fillMaxSize()) {
                     Column {
-                        SelectionContainer {
+                        val readerContent: @Composable () -> Unit = {
                             Column {
                                 state.notice?.let {
                                     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
@@ -528,6 +529,11 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
                                 }
                                 MarkdownBlocks(doc, listState, ctx)
                             }
+                        }
+                        if (renderedTextSelectionEnabled) {
+                            SelectionContainer { readerContent() }
+                        } else {
+                            readerContent()
                         }
                     }
                     if (doc.blocks.size > 1) {

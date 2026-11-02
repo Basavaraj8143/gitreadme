@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,11 +69,20 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val readerTheme: StateFlow<ReaderThemeMode> =
         c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
+    val renderedTextSelectionEnabled: StateFlow<Boolean> =
+        c.settings.renderedTextSelectionEnabled.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SettingsStore.DEFAULT_RENDERED_TEXT_SELECTION,
+        )
     val auth = c.repository.authState
 
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
     fun setReaderTheme(mode: ReaderThemeMode) { viewModelScope.launch { c.settings.setReaderTheme(mode) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
+    fun setRenderedTextSelectionEnabled(enabled: Boolean) {
+        viewModelScope.launch { c.settings.setRenderedTextSelectionEnabled(enabled) }
+    }
 
     fun signIn(token: String) {
         viewModelScope.launch { c.repository.signIn(token) }
@@ -94,7 +104,8 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                     JSONObject()
                         .put("theme", settings.theme.name)
                         .put("readerTheme", settings.readerTheme.name)
-                        .put("fontSizeSp", settings.fontSizeSp.toDouble()),
+                        .put("fontSizeSp", settings.fontSizeSp.toDouble())
+                        .put("renderedTextSelectionEnabled", settings.renderedTextSelectionEnabled),
                 )
                 .put("bookmarks", JSONArray().apply {
                     bookmarks.forEach { bookmark ->
@@ -130,6 +141,12 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             val readerTheme = ReaderThemeMode.valueOf(settingData.getString("readerTheme"))
             val fontSize = settingData.getDouble("fontSizeSp").toFloat()
             require(fontSize.isFinite()) { "Backup has an invalid font size." }
+            val renderedTextSelectionEnabled =
+                if (settingData.has("renderedTextSelectionEnabled")) {
+                    settingData.getBoolean("renderedTextSelectionEnabled")
+                } else {
+                    SettingsStore.DEFAULT_RENDERED_TEXT_SELECTION
+                }
             val bookmarksJson = root.getJSONArray("bookmarks")
             val bookmarks = List(bookmarksJson.length()) { index ->
                 val item = bookmarksJson.getJSONObject(index)
@@ -146,6 +163,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             c.settings.setTheme(theme)
             c.settings.setReaderTheme(readerTheme)
             c.settings.setFontSize(fontSize)
+            c.settings.setRenderedTextSelectionEnabled(renderedTextSelectionEnabled)
             val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
             if (skipped > 0) {
                 "$restored bookmarks restored; $skipped skipped. Save their repositories first, then import again."
@@ -165,6 +183,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val theme by vm.theme.collectAsStateWithLifecycle()
     val readerTheme by vm.readerTheme.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
+    val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -224,6 +243,27 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                         Modifier.padding(vertical = 12.dp),
                     )
                 }
+            }
+            Row(
+                Modifier.fillMaxWidth().selectable(
+                    selected = renderedTextSelectionEnabled,
+                    role = Role.Switch,
+                    onClick = { vm.setRenderedTextSelectionEnabled(!renderedTextSelectionEnabled) },
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                    Text("Select and copy rendered text")
+                    Text(
+                        "Allow long-press selection in the rendered reader.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = renderedTextSelectionEnabled,
+                    onCheckedChange = null,
+                )
             }
             HorizontalDivider()
             Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleMedium)
