@@ -12,7 +12,6 @@ import com.byteharvest.mdreader.core.markdown.countMatches
 import com.byteharvest.mdreader.core.markdown.searchRuns
 import com.byteharvest.mdreader.core.pdf.PdfExporter
 import com.byteharvest.mdreader.data.local.RepositoryEntity
-import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
@@ -64,8 +63,6 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     val repo: StateFlow<RepositoryEntity?> = _repo.asStateFlow()
 
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
-    val readerTheme: StateFlow<ReaderThemeMode> =
-        c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
     val renderedTextSelectionEnabled: StateFlow<Boolean> =
         c.settings.renderedTextSelectionEnabled.stateIn(
             viewModelScope,

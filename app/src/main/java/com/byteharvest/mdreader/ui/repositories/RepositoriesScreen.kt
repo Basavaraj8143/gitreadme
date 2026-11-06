@@ -1,6 +1,5 @@
 package com.byteharvest.mdreader.ui.repositories
 
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -8,14 +7,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,6 +25,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.data.local.RepositoryEntity
+import com.byteharvest.mdreader.data.work.RepositoryAutoSync
 import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.browser.syncMessage
 import com.byteharvest.mdreader.ui.components.DocListItem
@@ -57,6 +60,8 @@ class RepositoriesViewModel(private val c: AppContainer) : ViewModel() {
         c.repository.repositories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val refreshing = MutableStateFlow<Set<String>>(emptySet())
     val downloading = MutableStateFlow<Pair<String, Pair<Int, Int>>?>(null)
+    val autoSyncRepoIds: StateFlow<Set<String>> =
+        c.settings.autoSyncRepositoryIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
     fun refresh(id: String) {
@@ -87,7 +92,21 @@ class RepositoriesViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun delete(id: String) { viewModelScope.launch { c.repository.deleteRepository(id) } }
+    fun delete(id: String) {
+        viewModelScope.launch {
+            c.settings.setAutoSyncEnabled(id, false)
+            RepositoryAutoSync.cancel(c.appContext, id)
+            c.repository.deleteRepository(id)
+        }
+    }
+
+    fun setAutoSync(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            c.settings.setAutoSyncEnabled(id, enabled)
+            if (enabled) RepositoryAutoSync.schedule(c.appContext, id)
+            else RepositoryAutoSync.cancel(c.appContext, id)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,6 +116,7 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
     val repos by vm.repos.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
+    val autoSyncRepoIds by vm.autoSyncRepoIds.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var confirmDelete by remember { mutableStateOf<RepositoryEntity?>(null) }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
@@ -120,12 +140,14 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
             )
             else -> LazyColumn(Modifier.padding(pad)) {
                 items(list, key = { it.id }) { r ->
+                    var menuExpanded by remember(r.id) { mutableStateOf(false) }
                     DocListItem(
                         title = "${r.owner}/${r.name}",
                         subtitle = buildString {
                             append("Branch ${r.branch}")
                             r.lastSyncAt?.let { append(" · synced ${relativeTime(it)}") }
                             if (r.syncState != "OK") append(" · ${r.syncState.lowercase()}")
+                            if (r.id in autoSyncRepoIds) append(" · auto-sync daily")
                             downloading?.takeIf { it.first == r.id }?.let {
                                 append("\nDownloading for offline · ${it.second.first}/${it.second.second}")
                             }
@@ -134,21 +156,60 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
                         icon = if (r.isPrivate) Icons.Filled.Lock else Icons.Filled.Folder,
                         onClick = { onOpenRepo(r.id) },
                         trailingContent = {
-                            Row {
-                                if (downloading?.first == r.id) {
-                                    CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
-                                } else {
-                                    IconButton({ vm.downloadForOffline(r.id) }, enabled = downloading == null) {
-                                        Icon(Icons.Filled.DownloadForOffline, "Download ${r.name} for offline reading")
-                                    }
-                                }
-                                if (r.id in refreshing) CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
-                                else IconButton({ vm.refresh(r.id) }, enabled = downloading == null) {
-                                    Icon(Icons.Filled.Refresh, "Refresh ${r.name}")
-                                }
-                                IconButton({ confirmDelete = r }, enabled = downloading == null) {
-                                    Icon(Icons.Filled.Delete, "Remove ${r.name}")
-                                }
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Filled.MoreVert, "Actions for ${r.name}")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Download for offline") },
+                                    leadingIcon = {
+                                        if (downloading?.first == r.id) {
+                                            CircularProgressIndicator(Modifier.size(20.dp))
+                                        } else {
+                                            Icon(Icons.Filled.DownloadForOffline, contentDescription = null)
+                                        }
+                                    },
+                                    enabled = downloading == null,
+                                    onClick = {
+                                        menuExpanded = false
+                                        vm.downloadForOffline(r.id)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Refresh") },
+                                    leadingIcon = {
+                                        if (r.id in refreshing) CircularProgressIndicator(Modifier.size(20.dp))
+                                        else Icon(Icons.Filled.Refresh, contentDescription = null)
+                                    },
+                                    enabled = downloading == null && r.id !in refreshing,
+                                    onClick = {
+                                        menuExpanded = false
+                                        vm.refresh(r.id)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Auto-sync daily") },
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = r.id in autoSyncRepoIds,
+                                            onCheckedChange = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        vm.setAutoSync(r.id, r.id !in autoSyncRepoIds)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Remove repository") },
+                                    enabled = downloading == null && r.id !in refreshing,
+                                    onClick = {
+                                        menuExpanded = false
+                                        confirmDelete = r
+                                    },
+                                )
                             }
                         },
                     )
@@ -162,7 +223,12 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
             onDismissRequest = { confirmDelete = null },
             title = { Text("Remove ${r.owner}/${r.name}?") },
             text = { Text("Its cached documents, bookmarks and history on this device are deleted. Nothing on GitHub is touched.") },
-            confirmButton = { TextButton({ vm.delete(r.id); confirmDelete = null }) { Text("Remove") } },
+            confirmButton = {
+                TextButton({
+                    vm.delete(r.id)
+                    confirmDelete = null
+                }) { Text("Remove") }
+            },
             dismissButton = { TextButton({ confirmDelete = null }) { Text("Cancel") } },
         )
     }

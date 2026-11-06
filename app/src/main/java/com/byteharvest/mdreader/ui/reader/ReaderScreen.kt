@@ -98,7 +98,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byteharvest.mdreader.core.markdown.TocEntry
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
-import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.domain.LinkResolver
 import com.byteharvest.mdreader.domain.LinkTarget
@@ -290,17 +289,12 @@ private fun DocumentScrubber(
 @Composable
 fun ReaderScreen(onBack: () -> Unit, onOpenDoc: (String, String) -> Unit) {
     val vm = appViewModel { c, h -> ReaderViewModel(h, c) }
-    val readerTheme by vm.readerTheme.collectAsStateWithLifecycle()
     val appTheme by vm.appTheme.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
-    val useDark = when (readerTheme) {
-        ReaderThemeMode.DARK -> true
-        ReaderThemeMode.LIGHT -> false
-        ReaderThemeMode.APP -> when (appTheme) {
-            ThemeMode.SYSTEM -> systemDark
-            ThemeMode.LIGHT -> false
-            ThemeMode.DARK -> true
-        }
+    val useDark = when (appTheme) {
+        ThemeMode.SYSTEM -> systemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
     }
     MaterialTheme(colorScheme = if (useDark) ReaderDarkColors else ReaderLightColors) {
         ReaderContent(vm, onBack, onOpenDoc)

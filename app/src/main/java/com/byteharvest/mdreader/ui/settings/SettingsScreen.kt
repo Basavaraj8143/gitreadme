@@ -48,11 +48,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
-import com.byteharvest.mdreader.data.local.ReaderThemeMode
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.repository.BookmarkBackup
+import com.byteharvest.mdreader.data.work.RepositoryAutoSync
 import com.byteharvest.mdreader.ui.appViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -66,8 +66,6 @@ import org.json.JSONObject
 
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
-    val readerTheme: StateFlow<ReaderThemeMode> =
-        c.settings.readerTheme.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderThemeMode.DARK)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
     val renderedTextSelectionEnabled: StateFlow<Boolean> =
         c.settings.renderedTextSelectionEnabled.stateIn(
@@ -78,7 +76,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val auth = c.repository.authState
 
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
-    fun setReaderTheme(mode: ReaderThemeMode) { viewModelScope.launch { c.settings.setReaderTheme(mode) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
     fun setRenderedTextSelectionEnabled(enabled: Boolean) {
         viewModelScope.launch { c.settings.setRenderedTextSelectionEnabled(enabled) }
@@ -89,7 +86,16 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun signOut() {
-        viewModelScope.launch { c.repository.signOut() }
+        viewModelScope.launch {
+            val autoSyncIds = c.settings.autoSyncRepositoryIds.first()
+            for (repoId in autoSyncIds) {
+                if (c.repository.repo(repoId)?.isPrivate == true) {
+                    c.settings.setAutoSyncEnabled(repoId, false)
+                    RepositoryAutoSync.cancel(c.appContext, repoId)
+                }
+            }
+            c.repository.signOut()
+        }
     }
 
     suspend fun exportBackup(uri: Uri): String = withContext(Dispatchers.IO) {
@@ -103,7 +109,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                     "settings",
                     JSONObject()
                         .put("theme", settings.theme.name)
-                        .put("readerTheme", settings.readerTheme.name)
                         .put("fontSizeSp", settings.fontSizeSp.toDouble())
                         .put("renderedTextSelectionEnabled", settings.renderedTextSelectionEnabled),
                 )
@@ -138,7 +143,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
 
             val settingData = root.getJSONObject("settings")
             val theme = ThemeMode.valueOf(settingData.getString("theme"))
-            val readerTheme = ReaderThemeMode.valueOf(settingData.getString("readerTheme"))
             val fontSize = settingData.getDouble("fontSizeSp").toFloat()
             require(fontSize.isFinite()) { "Backup has an invalid font size." }
             val renderedTextSelectionEnabled =
@@ -161,7 +165,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             }
 
             c.settings.setTheme(theme)
-            c.settings.setReaderTheme(readerTheme)
             c.settings.setFontSize(fontSize)
             c.settings.setRenderedTextSelectionEnabled(renderedTextSelectionEnabled)
             val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
@@ -181,7 +184,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
 fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val vm = appViewModel { c, _ -> SettingsViewModel(c) }
     val theme by vm.theme.collectAsStateWithLifecycle()
-    val readerTheme by vm.readerTheme.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
     val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
@@ -223,27 +225,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            Text("Reader appearance", style = MaterialTheme.typography.titleMedium)
-            ReaderThemeMode.values().forEach { mode ->
-                Row(
-                    Modifier.fillMaxWidth().selectable(
-                        selected = readerTheme == mode,
-                        role = Role.RadioButton,
-                        onClick = { vm.setReaderTheme(mode) },
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = readerTheme == mode, onClick = null)
-                    Text(
-                        when (mode) {
-                            ReaderThemeMode.APP -> "Follow app theme"
-                            ReaderThemeMode.LIGHT -> "Light"
-                            ReaderThemeMode.DARK -> "Dark"
-                        },
-                        Modifier.padding(vertical = 12.dp),
-                    )
-                }
-            }
+            Text("Reader follows the app theme.", style = MaterialTheme.typography.bodyMedium)
             Row(
                 Modifier.fillMaxWidth().selectable(
                     selected = renderedTextSelectionEnabled,
@@ -297,7 +279,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             HorizontalDivider()
             Text("Backup", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Export or restore your theme, reader appearance, font size and bookmarks. Tokens and cached documents are not included. " +
+                "Export or restore your theme, font size and bookmarks. Tokens and cached documents are not included. " +
                     "Save repositories on this device before importing their bookmarks.",
                 style = MaterialTheme.typography.bodySmall,
             )
