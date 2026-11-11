@@ -19,6 +19,8 @@ import com.byteharvest.mdreader.data.remote.TreeDto
 import com.byteharvest.mdreader.domain.isMarkdownPath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class SyncReport(
     val updatedDocs: Int = 0,
@@ -29,6 +31,10 @@ data class SyncReport(
 )
 
 data class OfflineDownloadReport(val downloaded: Int, val alreadyCached: Int, val failed: Int)
+data class RepositoryAutoSyncReport(
+    val sync: SyncReport,
+    val download: OfflineDownloadReport?,
+)
 
 data class BookmarkBackup(
     val owner: String,
@@ -57,6 +63,7 @@ class AppRepository(
     private val tokens: TokenStore,
 ) {
     private val dao = db.dao()
+    private val syncMutex = Mutex()
     private val _authState = MutableStateFlow(
         tokens.load()?.let { AuthState(signedIn = true, username = tokens.username()) } ?: AuthState(signedIn = false)
     )
@@ -131,7 +138,17 @@ class AppRepository(
         }
     }
 
-    suspend fun refresh(id: String): SyncReport {
+    suspend fun refresh(id: String): SyncReport = syncMutex.withLock {
+        refreshLocked(id)
+    }
+
+    suspend fun refreshAndDownloadForOffline(id: String): RepositoryAutoSyncReport = syncMutex.withLock {
+        val sync = refreshLocked(id)
+        val download = if (sync.error == null) downloadForOfflineLocked(id) { _, _ -> } else null
+        RepositoryAutoSyncReport(sync, download)
+    }
+
+    private suspend fun refreshLocked(id: String): SyncReport {
         val repo = dao.repo(id) ?: return SyncReport(error = "Repository is no longer saved.")
         val now = System.currentTimeMillis()
         val tree = try {
@@ -179,6 +196,13 @@ class AppRepository(
     }
 
     suspend fun downloadForOffline(
+        id: String,
+        onProgress: (completed: Int, total: Int) -> Unit,
+    ): OfflineDownloadReport = syncMutex.withLock {
+        downloadForOfflineLocked(id, onProgress)
+    }
+
+    private suspend fun downloadForOfflineLocked(
         id: String,
         onProgress: (completed: Int, total: Int) -> Unit,
     ): OfflineDownloadReport {

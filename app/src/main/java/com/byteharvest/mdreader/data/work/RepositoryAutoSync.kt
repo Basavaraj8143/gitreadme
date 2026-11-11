@@ -58,15 +58,16 @@ object RepositoryAutoSync {
             }
 
             return try {
-                val sync = container.repository.refresh(repoId)
-                if (sync.error != null) {
-                    android.util.Log.w(TAG, "Auto-sync refresh failed for $repoId: ${sync.error}")
+                val report = container.repository.refreshAndDownloadForOffline(repoId)
+                if (report.sync.error != null) {
+                    android.util.Log.w(TAG, "Auto-sync refresh failed for $repoId: ${report.sync.error}")
                     return Result.retry()
                 }
 
-                val report = container.repository.downloadForOffline(repoId) { _, _ -> }
-                if (report.failed > 0) {
-                    android.util.Log.w(TAG, "Auto-sync downloaded with ${report.failed} unavailable files for $repoId")
+                val download = report.download
+                    ?: return Result.retry()
+                if (download.failed > 0) {
+                    android.util.Log.w(TAG, "Auto-sync downloaded with ${download.failed} unavailable files for $repoId")
                     Result.retry()
                 } else {
                     Result.success()

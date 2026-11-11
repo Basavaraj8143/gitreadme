@@ -210,6 +210,8 @@ The same action is available in **Settings → Manage saved repositories**. Repo
 
 **For the freshest offline copy:** refresh the repository while online, *then* run **Make available offline**.
 
+In **Settings → Manage saved repositories**, each repository's three-dot menu also has **Refresh**, **Remove repository**, and **Auto-sync daily**. Auto-sync refreshes the Markdown tree and downloads all Markdown files once per day when a network is available. Android may defer the run because of battery or system policies. Since any network is allowed, downloads can use mobile data. Auto-sync choices are stored on this device and are not included in backups.
+
 ### Opening a local Markdown file
 
 1. On the home screen, choose the local file option.
@@ -697,7 +699,7 @@ No. All removals are local to your device.
 - GitHub's recursive tree API can **truncate very large repositories**. The app reports partial tree sync status, but missing paths cannot be browsed or downloaded from that response.
 - Documents over **1,000,000 characters** are displayed but not stored in the Room cache.
 - Offline mode caches **Markdown text only**. Images, external links, and other assets are not downloaded.
-- Refresh and offline download are **manual, foreground** actions. No scheduled background sync.
+- Refresh and manual offline download are foreground actions. Repositories with **Auto-sync daily** enabled also refresh and download in the background, subject to Android scheduling and network availability.
 - Raw HTML is not rendered as a browser would. `<img>` tags are recognized; other HTML is reduced to text.
 - Code coloring is lightweight token coloring, not a full language-aware syntax highlighter.
 - Linked Markdown documents open in the reader, but their `#anchor` fragment is not carried to the destination document.
