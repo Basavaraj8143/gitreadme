@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.FolderOpen
@@ -36,8 +37,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -279,36 +283,77 @@ fun HomeScreen(
             } else if (list != null) {
                 items(list, key = { "${it.repoId}|${it.path}" }) { d ->
                     var menuExpanded by remember(d.repoId, d.path) { mutableStateOf(false) }
-                    Box {
-                        DocListItem(
-                            title = d.title,
-                            subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
-                                "On this device · Local Markdown file"
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.EndToStart) {
+                                vm.removeFromRecent(d)
+                                true
                             } else {
-                                "${d.owner}/${d.repoName} · ${d.path}"
-                            },
-                            icon = Icons.Filled.Description,
-                            trailing = relativeTime(d.lastOpenedAt),
-                            onLongClick = { menuExpanded = true },
-                            onClick = { onOpenDoc(d.repoId, d.path) },
-                        )
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "Remove from recent",
-                                        modifier = Modifier.fillMaxWidth(),
-                                        textAlign = TextAlign.End,
+                                false
+                            }
+                        }
+                    )
+                    val showDismissBackground = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = false,
+                        backgroundContent = {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        if (showDismissBackground) {
+                                            MaterialTheme.colorScheme.errorContainer
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    ),
+                                contentAlignment = Alignment.CenterEnd,
+                            ) {
+                                if (showDismissBackground) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = "Remove from recent",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(end = 28.dp),
                                     )
+                                }
+                            }
+                        },
+                    ) {
+                        Box {
+                            DocListItem(
+                                title = d.title,
+                                subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
+                                    "On this device · Local Markdown file"
+                                } else {
+                                    "${d.owner}/${d.repoName} · ${d.path}"
                                 },
-                                onClick = {
-                                    menuExpanded = false
-                                    vm.removeFromRecent(d)
-                                },
+                                icon = Icons.Filled.Description,
+                                trailing = relativeTime(d.lastOpenedAt),
+                                onLongClick = { menuExpanded = true },
+                                onClick = { onOpenDoc(d.repoId, d.path) },
                             )
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Remove from recent",
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textAlign = TextAlign.End,
+                                        )
+                                    },
+                                    onClick = {
+                                        menuExpanded = false
+                                        vm.removeFromRecent(d)
+                                    },
+                                )
+                            }
                         }
                     }
                 }

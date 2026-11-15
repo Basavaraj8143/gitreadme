@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 
 data class SyncReport(
     val updatedDocs: Int = 0,
@@ -75,13 +76,17 @@ class AppRepository(
     suspend fun repo(id: String) = dao.repo(id)
     fun treePaths(id: String) = dao.treePaths(id)
     fun recentDocs(limit: Int) = dao.recent(limit)
-    suspend fun removeFromHistory(repoId: String, path: String) = dao.deleteHistory(repoId, path)
+    suspend fun removeFromHistory(repoId: String, path: String) {
+        if (repoId == LOCAL_REPOSITORY_ID) File(path).delete()
+        dao.deleteHistory(repoId, path)
+    }
     fun bookmarks() = dao.bookmarks()
     fun isBookmarked(id: String, path: String) = dao.isBookmarked(id, path)
     suspend fun touch(id: String) = dao.touchRepo(id, System.currentTimeMillis())
     suspend fun hasFile(id: String, path: String) = dao.treeSha(id, path) != null
     suspend fun deleteRepository(id: String) = dao.deleteRepo(id)
     suspend fun clearCachedDocuments(id: String) = dao.clearDocs(id)
+    suspend fun clearCachedDocuments() = dao.clearAllDocs()
 
     fun makeId(owner: String, name: String, branch: String) = "${owner.lowercase()}/${name.lowercase()}@$branch"
 

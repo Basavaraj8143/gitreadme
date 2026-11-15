@@ -1,6 +1,7 @@
 package com.byteharvest.mdreader.ui.repositories
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,6 +55,73 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import java.io.File
+
+data class StorageUsage(
+    val localFilesBytes: Long,
+    val temporaryCacheBytes: Long,
+) {
+    val totalFileBytes: Long get() = localFilesBytes + temporaryCacheBytes
+}
+
+private fun File.directorySize(): Long =
+    if (!exists()) 0L else if (isFile) length() else listFiles().orEmpty().sumOf { it.directorySize() }
+
+@Composable
+private fun StoragePanel(
+    usage: StorageUsage?,
+    onRefresh: () -> Unit,
+    onClearMarkdown: () -> Unit,
+    onClearTemporary: () -> Unit,
+) {
+    androidx.compose.foundation.layout.Column(
+        Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Storage", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        Text(
+            "App-managed content. Saved repositories and bookmarks are not removed.",
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (usage == null) {
+            CircularProgressIndicator(Modifier.size(20.dp))
+        } else {
+            StorageRow("Imported local files", usage.localFilesBytes)
+            StorageRow("Temporary and image cache", usage.temporaryCacheBytes)
+            Text("File cache total: ${formatBytes(usage.totalFileBytes)}", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+            androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onClearMarkdown) { Text("Clear Markdown") }
+                TextButton(onClick = onClearTemporary) { Text("Clear temporary") }
+            }
+            TextButton(onClick = onRefresh) { Text("Refresh") }
+        }
+    }
+}
+
+@Composable
+private fun StorageRow(label: String, bytes: Long) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+    ) {
+        Text(label)
+        Text(formatBytes(bytes))
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit++
+    }
+    return if (value >= 10) "${value.toInt()} ${units[unit]}" else "%.1f %s".format(value, units[unit])
+}
 
 class RepositoriesViewModel(private val c: AppContainer) : ViewModel() {
     val repos: StateFlow<List<RepositoryEntity>?> =
@@ -63,6 +131,36 @@ class RepositoriesViewModel(private val c: AppContainer) : ViewModel() {
     val autoSyncRepoIds: StateFlow<Set<String>> =
         c.settings.autoSyncRepositoryIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    private val _storage = MutableStateFlow<StorageUsage?>(null)
+    val storage: StateFlow<StorageUsage?> = _storage
+
+    init {
+        refreshStorage()
+    }
+
+    fun refreshStorage() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _storage.value = StorageUsage(
+                localFilesBytes = File(c.appContext.filesDir, "local_docs").directorySize(),
+                temporaryCacheBytes = c.appContext.cacheDir.directorySize(),
+            )
+        }
+    }
+
+    fun clearCachedMarkdown() {
+        viewModelScope.launch(Dispatchers.IO) {
+            c.repository.clearCachedDocuments()
+            refreshStorage()
+        }
+    }
+
+    fun clearTemporaryCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            c.appContext.cacheDir.deleteRecursively()
+            c.appContext.cacheDir.mkdirs()
+            refreshStorage()
+        }
+    }
 
     fun refresh(id: String) {
         if (id in refreshing.value) return
@@ -117,6 +215,7 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val autoSyncRepoIds by vm.autoSyncRepoIds.collectAsStateWithLifecycle()
+    val storage by vm.storage.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var confirmDelete by remember { mutableStateOf<RepositoryEntity?>(null) }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
@@ -133,13 +232,25 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
         val list = repos
         when {
             list == null -> LoadingBox(Modifier.padding(pad).fillMaxSize())
-            list.isEmpty() -> EmptyState(
-                Icons.Filled.Inbox, "No saved repositories",
-                "Repositories you open are saved here for offline reading.",
-                Modifier.padding(pad).fillMaxSize(),
-            )
             else -> LazyColumn(Modifier.padding(pad)) {
-                items(list, key = { it.id }) { r ->
+                item {
+                    StoragePanel(
+                        usage = storage,
+                        onRefresh = vm::refreshStorage,
+                        onClearMarkdown = vm::clearCachedMarkdown,
+                        onClearTemporary = vm::clearTemporaryCache,
+                    )
+                }
+                if (list.isEmpty()) {
+                    item {
+                        EmptyState(
+                            Icons.Filled.Inbox,
+                            "No saved repositories",
+                            "Repositories you open are saved here for offline reading.",
+                            Modifier.fillMaxWidth().padding(16.dp),
+                        )
+                    }
+                } else items(list, key = { it.id }) { r ->
                     var menuExpanded by remember(r.id) { mutableStateOf(false) }
                     DocListItem(
                         title = "${r.owner}/${r.name}",
@@ -151,6 +262,7 @@ fun RepositoriesScreen(onBack: () -> Unit, onOpenRepo: (String) -> Unit) {
                             downloading?.takeIf { it.first == r.id }?.let {
                                 append("\nDownloading for offline · ${it.second.first}/${it.second.second}")
                             }
+
                             if (!r.description.isNullOrBlank()) append("\n${r.description}")
                         },
                         icon = if (r.isPrivate) Icons.Filled.Lock else Icons.Filled.Folder,

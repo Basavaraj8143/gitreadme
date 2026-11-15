@@ -80,7 +80,7 @@ object PdfExporter {
                     is MdBlock.Quote -> b.children.forEach { emit(it, indent + 14) }
                     is MdBlock.ListBlock -> b.items.forEachIndexed { idx, item ->
                         val prefix = when {
-                            item.checked != null -> if (item.checked) "[x] " else "[ ] "
+                            item.checked != null -> if (item.checked == true) "[x] " else "[ ] "
                             b.ordered -> "${b.start + idx}. "
                             else -> "\u2022 "
                         }

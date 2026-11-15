@@ -213,7 +213,7 @@ private fun BlockView(b: MdBlock, ctx: RenderCtx, active: Boolean) {
             b.items.forEachIndexed { idx, item ->
                 Row {
                     val marker = when {
-                        item.checked != null -> if (item.checked) "\u2611" else "\u2610"
+                        item.checked != null -> if (item.checked == true) "\u2611" else "\u2610"
                         b.ordered -> "${b.start + idx}."
                         else -> "\u2022"
                     }

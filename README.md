@@ -408,7 +408,7 @@ flowchart TD
     VM --> SETTINGS[SettingsStore - DataStore]
     VM --> TOKEN[TokenStore - Android Keystore]
     API --> GH[GitHub REST API]
-    VM --> ENGINE[MarkdownEngine]
+    VM --> ENGINE[MarkdownEngine - markdown-core]
     ENGINE --> COMMONMARK[CommonMark + GFM extensions]
     VM --> PDF[PdfExporter]
     PDF --> SAF[Android document picker / share sheet]
@@ -425,7 +425,7 @@ flowchart TD
 | **Room** (`AppDatabase`, `AppDao`) | `data/` | Persistent repository metadata, Markdown tree, cached text, bookmarks, reading history |
 | **`SettingsStore`** | `data/` | Shared app/reader theme, font size, scroll positions (Preferences DataStore) |
 | **`TokenStore`** | `core/` | Encrypted token storage with Android Keystore and AES/GCM |
-| **`MarkdownEngine`** | `core/` | Parser abstraction. `CommonmarkEngine` converts CommonMark/GFM nodes into UI-independent Markdown models |
+| **`MarkdownEngine`** | `markdown-core/` | JVM-only parser abstraction. `CommonmarkEngine` converts CommonMark/GFM nodes into UI-independent Markdown models; it has no Android or Compose dependency |
 | **Reader UI** | `ui/` | Turns Markdown models into Compose blocks; resolves links, images, search, and table-of-contents navigation |
 | **`PdfExporter`** | `core/` | Paginates a Markdown model into a local PDF using Android's `PdfDocument` APIs |
 | **`AppContainer`** | app | Small manual dependency-injection container created by the `Application` class. **No DI framework** is used |
@@ -435,7 +435,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A[Raw Markdown text] --> B[CommonmarkEngine<br/>CommonMark + GFM]
+    A[Raw Markdown text] --> B[CommonmarkEngine<br/>markdown-core]
     B --> C[UI-independent<br/>Markdown model]
     C --> D[Compose reader<br/>lazy list of blocks]
     C --> E[PdfExporter]
@@ -587,12 +587,16 @@ flowchart LR
 
 ```text
 .
+├── markdown-core/                      # Android-independent Markdown parser and models
+│   └── src/
+│       ├── main/kotlin/                 # MarkdownEngine, CommonmarkEngine, MarkdownDoc
+│       └── test/kotlin/                 # Parser and model tests
 ├── app/
 │   ├── schemas/                         # Exported Room schema
 │   └── src/
 │       ├── main/
 │       │   ├── java/com/byteharvest/mdreader/
-│       │   │   ├── core/                # Parser, Markdown engine, PDF, token store
+│       │   │   ├── core/                # PDF and token store
 │       │   │   ├── data/                # Room, DataStore, GitHub API, repository
 │       │   │   ├── domain/              # Path listing, filtering, and link resolution
 │       │   │   └── ui/                  # Compose screens, ViewModels, theme, navigation

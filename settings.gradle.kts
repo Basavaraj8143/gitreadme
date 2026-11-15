@@ -10,3 +10,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Gitread.me"
 include(":app")
+include(":markdown-core")

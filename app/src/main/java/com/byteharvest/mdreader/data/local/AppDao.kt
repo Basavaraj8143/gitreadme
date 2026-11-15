@@ -68,6 +68,8 @@ interface AppDao {
 
     @Query("DELETE FROM cached_documents WHERE repoId = :id") suspend fun clearDocs(id: String)
 
+    @Query("DELETE FROM cached_documents") suspend fun clearAllDocs()
+
     @Upsert suspend fun upsertBookmark(b: BookmarkEntity)
 
     @Query("DELETE FROM bookmarks WHERE repoId = :id AND path = :path")

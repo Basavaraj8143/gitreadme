@@ -62,7 +62,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
@@ -73,7 +72,6 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             SettingsStore.DEFAULT_RENDERED_TEXT_SELECTION,
         )
     val auth = c.repository.authState
-
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
     fun setRenderedTextSelectionEnabled(enabled: Boolean) {
@@ -287,10 +285,10 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             }
 
             SettingsSection(
-                title = "Repositories & offline",
-                description = "Manage saved repositories, cached Markdown files, and automatic syncing.",
+                title = "Repositories & storage",
+                description = "Manage saved repositories, offline syncing, and app-managed storage.",
             ) {
-                OutlinedButton(onRepos) { Text("Manage saved repositories") }
+                OutlinedButton(onRepos) { Text("Open repositories & storage") }
             }
 
             SettingsSection(
