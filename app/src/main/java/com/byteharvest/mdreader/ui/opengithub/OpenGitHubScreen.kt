@@ -23,7 +23,6 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -67,8 +66,6 @@ import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.core.ParseResult
 import com.byteharvest.mdreader.core.RepoInputParser
-import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
-import com.byteharvest.mdreader.data.local.RecentDoc
 import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.remote.RepoDto
 import com.byteharvest.mdreader.ui.appViewModel
@@ -92,8 +89,6 @@ data class UserReposState(
 data class OfflineTaskState(val repoKey: String? = null, val completed: Int = 0, val total: Int = 0)
 
 class OpenGitHubViewModel(private val c: AppContainer) : ViewModel() {
-    val recent: StateFlow<List<RecentDoc>?> =
-        c.repository.recentDocs(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val repos: StateFlow<List<RepositoryEntity>?> =
         c.repository.repositories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -198,7 +193,6 @@ fun OpenGitHubScreen(
     val vm = appViewModel { c, _ -> OpenGitHubViewModel(c) }
     val open by vm.open.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
-    val recent by vm.recent.collectAsStateWithLifecycle()
     val repos by vm.repos.collectAsStateWithLifecycle()
     val userRepos by vm.userRepos.collectAsStateWithLifecycle()
     val offlineTask by vm.offlineTask.collectAsStateWithLifecycle()
@@ -302,22 +296,6 @@ fun OpenGitHubScreen(
                             Text("Open")
                         }
                     }
-                }
-            }
-
-            // Recent Section
-            val list = recent?.filterNot { it.repoId == LOCAL_REPOSITORY_ID }
-            if (!list.isNullOrEmpty()) {
-                item {
-                    Text("Recent", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-                }
-                items(list, key = { "${it.repoId}|${it.path}" }) { d ->
-                    DocListItem(
-                        title = "${d.owner}/${d.repoName}",
-                        subtitle = "${d.path}${if (d.title.isNotBlank()) " · ${d.title}" else ""}",
-                        icon = Icons.Filled.Description,
-                        onClick = { onOpenDoc(d.repoId, d.path) },
-                    )
                 }
             }
 

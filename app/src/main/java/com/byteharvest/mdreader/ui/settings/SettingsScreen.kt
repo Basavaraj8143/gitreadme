@@ -18,7 +18,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -208,86 +207,102 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     ) { pad ->
         Column(
             Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            Text("Theme", style = MaterialTheme.typography.titleMedium)
-            ThemeMode.values().forEach { m ->
+            SettingsSection(
+                title = "Appearance",
+                description = "Choose how Gitread.me looks across the app and reader.",
+            ) {
+                Text("Theme", style = MaterialTheme.typography.titleSmall)
+                ThemeMode.values().forEach { m ->
+                    Row(
+                        Modifier.fillMaxWidth().selectable(
+                            selected = theme == m,
+                            role = Role.RadioButton,
+                            onClick = { vm.setTheme(m) },
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = theme == m, onClick = null)
+                        Text(m.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.padding(vertical = 12.dp))
+                    }
+                }
+            }
+
+            SettingsSection(
+                title = "Reader",
+                description = "Adjust reading size and text interaction.",
+            ) {
+                Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleSmall)
+                Slider(
+                    value = fontSp,
+                    onValueChange = { vm.setFont(it) },
+                    valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
+                    steps = 7,
+                )
                 Row(
                     Modifier.fillMaxWidth().selectable(
-                        selected = theme == m,
-                        role = Role.RadioButton,
-                        onClick = { vm.setTheme(m) },
+                        selected = renderedTextSelectionEnabled,
+                        role = Role.Switch,
+                        onClick = { vm.setRenderedTextSelectionEnabled(!renderedTextSelectionEnabled) },
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RadioButton(selected = theme == m, onClick = null)
-                    Text(m.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.padding(vertical = 12.dp))
-                }
-            }
-            HorizontalDivider()
-            Text("Reader follows the app theme.", style = MaterialTheme.typography.bodyMedium)
-            Row(
-                Modifier.fillMaxWidth().selectable(
-                    selected = renderedTextSelectionEnabled,
-                    role = Role.Switch,
-                    onClick = { vm.setRenderedTextSelectionEnabled(!renderedTextSelectionEnabled) },
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                    Text("Select and copy rendered text")
-                    Text(
-                        "Allow long-press selection in the rendered reader.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text("Select and copy rendered text")
+                        Text(
+                            "Allow long-press selection in the rendered reader.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = renderedTextSelectionEnabled,
+                        onCheckedChange = null,
                     )
                 }
-                Switch(
-                    checked = renderedTextSelectionEnabled,
-                    onCheckedChange = null,
-                )
             }
-            HorizontalDivider()
-            Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleMedium)
-            Slider(
-                value = fontSp, onValueChange = { vm.setFont(it) },
-                valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT, steps = 7,
-            )
-            HorizontalDivider()
-            Text("GitHub access", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Public repositories work without signing in. For private repositories (and higher rate limits) paste a " +
-                    "fine-grained personal access token with read-only \"Contents\" and \"Metadata\" permission, limited to the repositories you need. " +
-                    "It is stored encrypted with a key held in the Android Keystore.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (auth.signedIn) {
-                OutlinedButton({ confirmSignOut = true }) { Text("Sign out") }
-            } else {
-                OutlinedTextField(
-                    token, { token = it }, singleLine = true, label = { Text("Personal access token") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button({ vm.signIn(token); token = "" }, enabled = token.isNotBlank() && !auth.busy) { Text("Sign in") }
+
+            SettingsSection(
+                title = "GitHub access",
+                description = "Public repositories work without signing in. A read-only token enables private repositories and higher rate limits. Tokens are stored encrypted in the Android Keystore.",
+            ) {
+                if (auth.signedIn) {
+                    OutlinedButton({ confirmSignOut = true }) { Text("Sign out") }
+                } else {
+                    OutlinedTextField(
+                        token,
+                        { token = it },
+                        singleLine = true,
+                        label = { Text("Personal access token") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button({ vm.signIn(token); token = "" }, enabled = token.isNotBlank() && !auth.busy) {
+                        Text("Sign in")
+                    }
+                }
+                auth.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
-            auth.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            HorizontalDivider()
-            Text("Repositories and cache", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onRepos) { Text("Manage saved repositories") }
-            HorizontalDivider()
-            Text("Backup", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Export or restore your theme, font size and bookmarks. Tokens and cached documents are not included. " +
-                    "Save repositories on this device before importing their bookmarks.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedButton(onClick = { backupLauncher.launch("gitread-me-backup.json") }) {
-                Text("Export settings and bookmarks")
+
+            SettingsSection(
+                title = "Repositories & offline",
+                description = "Manage saved repositories, cached Markdown files, and automatic syncing.",
+            ) {
+                OutlinedButton(onRepos) { Text("Manage saved repositories") }
             }
-            OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) }) {
-                Text("Import settings and bookmarks")
+
+            SettingsSection(
+                title = "Backup & restore",
+                description = "Export or restore your theme, font size, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
+            ) {
+                OutlinedButton(onClick = { backupLauncher.launch("gitread-me-backup.json") }) {
+                    Text("Export settings and bookmarks")
+                }
+                OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) }) {
+                    Text("Import settings and bookmarks")
+                }
             }
         }
     }
@@ -300,5 +315,22 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             confirmButton = { TextButton({ vm.signOut(); confirmSignOut = false }) { Text("Sign out") } },
             dismissButton = { TextButton({ confirmSignOut = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    description: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        content()
     }
 }

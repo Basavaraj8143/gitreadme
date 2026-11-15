@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -144,6 +146,7 @@ private fun BlockView(b: MdBlock, ctx: RenderCtx, active: Boolean) {
             InlineText(
                 b.inlines, ctx, active,
                 bodyStyle(ctx, scale).copy(fontWeight = FontWeight.Bold, lineHeight = (ctx.baseSp * scale * 1.3f).sp),
+                modifier = Modifier.semantics { heading() },
             )
             if (b.level <= 2) HorizontalDivider(Modifier.padding(top = 6.dp))
         }

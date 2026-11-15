@@ -166,8 +166,8 @@ private fun DocumentScrubber(
     val totalItems = layoutInfo.totalItemsCount
     val visibleItems = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
     val visibleItemsState = rememberUpdatedState(visibleItems)
-    val firstVisible = listState.firstVisibleItemIndex
-    val isScrolling = listState.isScrollInProgress
+    val firstVisible by remember { derivedStateOf { listState.firstVisibleItemIndex } }
+    val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
     val scope = rememberCoroutineScope()
     var isInteracting by remember { mutableStateOf(false) }
     var isVisible by remember { mutableStateOf(false) }
