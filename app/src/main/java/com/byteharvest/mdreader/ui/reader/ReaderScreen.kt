@@ -307,6 +307,7 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
     val state by vm.state.collectAsStateWithLifecycle()
     val search by vm.search.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
+    val readerFontMode by vm.readerFontMode.collectAsStateWithLifecycle()
     val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val bookmarked by vm.bookmarked.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -349,9 +350,10 @@ private fun ReaderContent(vm: ReaderViewModel, onBack: () -> Unit, onOpenDoc: (S
     }
 
     val activeBlock = search.matches.getOrNull(search.current) ?: -1
-    val ctx = remember(doc, search.query, activeBlock, fontSp) {
+    val ctx = remember(doc, search.query, activeBlock, fontSp, readerFontMode) {
         RenderCtx(
             baseSp = fontSp,
+            readerFontMode = readerFontMode,
             query = search.query,
             activeBlock = activeBlock,
             image = vm::imageSpec,

@@ -15,6 +15,7 @@ import com.byteharvest.mdreader.data.local.RepositoryEntity
 import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
+import com.byteharvest.mdreader.data.local.ReaderFontMode
 import com.byteharvest.mdreader.data.remote.GitHubUrls
 import com.byteharvest.mdreader.data.repository.DocLoad
 import com.byteharvest.mdreader.domain.LinkResolver
@@ -63,6 +64,12 @@ class ReaderViewModel(handle: SavedStateHandle, private val c: AppContainer) : V
     val repo: StateFlow<RepositoryEntity?> = _repo.asStateFlow()
 
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
+    val readerFontMode: StateFlow<ReaderFontMode> =
+        c.settings.readerFontMode.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SettingsStore.DEFAULT_READER_FONT_MODE,
+        )
     val renderedTextSelectionEnabled: StateFlow<Boolean> =
         c.settings.renderedTextSelectionEnabled.stateIn(
             viewModelScope,

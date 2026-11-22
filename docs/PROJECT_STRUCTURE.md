@@ -10,7 +10,7 @@ app/src/main/java/com/byteharvest/mdreader/
     security/TokenStore.kt  Android Keystore AES-GCM encrypted token
   domain/MarkdownTree.kt    directory listing/filtering, LinkResolver (pure, unit-tested)
   data/
-    local/                  Room entities + DAO + database, DataStore settings
+    local/                  Room entities + DAO + database, DataStore theme/reader-font settings
     remote/GitHubApi.kt     read-only REST client, error mapping, URL builders
     repository/AppRepository.kt  cache policy, sync, auth
   ui/                       Compose screens + ViewModels (home, browser, reader, repositories, bookmarks, settings)

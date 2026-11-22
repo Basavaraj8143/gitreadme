@@ -78,6 +78,9 @@ interface AppDao {
     @Query("SELECT COUNT(*) FROM bookmarks WHERE repoId = :id AND path = :path")
     fun isBookmarked(id: String, path: String): Flow<Int>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE repoId = :id AND path = :path)")
+    suspend fun hasBookmark(id: String, path: String): Boolean
+
     @Query(
         "SELECT b.repoId AS repoId, b.path AS path, b.title AS title, b.createdAt AS createdAt, " +
             "r.owner AS owner, r.name AS repoName, r.branch AS branch " +

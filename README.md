@@ -83,7 +83,7 @@ flowchart LR
 
 - Renders headings, paragraphs, emphasis, links, images, fenced and indented code, block quotes, ordered and unordered lists, thematic breaks, and tables.
 - Supports GitHub-Flavored Markdown: tables, strikethrough, task lists, and autolinks.
-- Centered, readable document column with serif reading typography, monospace code, syntax color accents, and horizontally scrollable code and tables.
+- Centered, readable document column with selectable system, sans-serif, serif, or monospace reader typography, monospace code, syntax color accents, and horizontally scrollable code and tables.
 - Reader appearance stays synchronized with the app theme: system, light, or dark.
 - Reader font size from **12 sp to 28 sp**.
 - Case-insensitive search with highlighted matches and next/previous navigation.
@@ -108,10 +108,10 @@ flowchart LR
 - App theme: system, light, or dark.
 - App and reader use one shared theme setting: system, light, or dark.
 - Optionally enable or disable text selection in rendered Markdown.
-- Persistent reader font size.
+- Persistent reader font size and reader font family.
 - Sign in with a GitHub fine-grained personal access token for private repositories and higher API rate limits.
 - Enable **Auto-sync daily** per saved repository to refresh its Markdown tree and download Markdown files for offline reading. Android runs this in the background when a network is available; timing can be deferred by battery and system policies.
-- Export or import a JSON backup containing the app theme, font size, rendered-text selection preference, and bookmarks.
+- Export or import a JSON backup containing the app theme, reader font size and family, rendered-text selection preference, and bookmarks.
 
 > Backups intentionally **exclude** access tokens, cached documents, repository contents, local-file bookmarks, auto-sync choices, and reading positions. Supported theme and reader settings are included. Older backups containing a separate reader theme remain importable; the reader now follows the app theme. To restore GitHub bookmarks, first save the corresponding repositories and branches on the destination device. Import then adds bookmarks for the repositories it can match.
 
@@ -192,7 +192,7 @@ git@github.com:octocat/Hello-World.git
 | Bookmark | Reader toolbar → bookmark icon (GitHub documents only) |
 | Rendered / raw view | **More options** |
 | Copy Markdown or a code block | **More options** / code block copy button |
-| Change font size | **More options** (also in Settings) |
+| Change font size or family | Reader settings |
 | Refresh the document | **More options** |
 | Export or share PDF | **More options** |
 | Open on GitHub | **More options** |
@@ -423,7 +423,7 @@ flowchart TD
 | **`AppRepository`** | `data/` | Repository lifecycle, cache policy, synchronization, bookmarks, history, authentication state |
 | **`GitHubApi`** | `data/` | Read-only GitHub REST calls using OkHttp and Kotlin serialization |
 | **Room** (`AppDatabase`, `AppDao`) | `data/` | Persistent repository metadata, Markdown tree, cached text, bookmarks, reading history |
-| **`SettingsStore`** | `data/` | Shared app/reader theme, font size, scroll positions (Preferences DataStore) |
+| **`SettingsStore`** | `data/` | Shared app/reader theme, reader font size and family, scroll positions (Preferences DataStore) |
 | **`TokenStore`** | `core/` | Encrypted token storage with Android Keystore and AES/GCM |
 | **`MarkdownEngine`** | `markdown-core/` | JVM-only parser abstraction. `CommonmarkEngine` converts CommonMark/GFM nodes into UI-independent Markdown models; it has no Android or Compose dependency |
 | **Reader UI** | `ui/` | Turns Markdown models into Compose blocks; resolves links, images, search, and table-of-contents navigation |
@@ -501,11 +501,11 @@ erDiagram
 | Data | Location | Notes |
 |---|---|---|
 | Repo metadata, tree, cached Markdown, bookmarks, history | Room database `mdreader.db` | Schema version 1 |
-| Shared app/reader theme, font size, rendered-text selection, reading positions | Preferences DataStore (`settings`) | |
+| Shared app/reader theme, reader font size and family, rendered-text selection, reading positions | Preferences DataStore (`settings`) | |
 | Encrypted token (ciphertext + IV) and GitHub login | Auth preferences | Login is non-secret metadata |
 | Token encryption key | Android Keystore | Never leaves secure hardware or system keystore |
 | Local Markdown files | `files/local_docs/` | App-private storage |
-| Backup JSON | Location you pick via document picker | Theme, font size, rendered-text selection, bookmarks only |
+| Backup JSON | Location you pick via document picker | Theme, reader font size and family, rendered-text selection, bookmarks only |
 
 - Kotlin **2.0.20**, Android Gradle Plugin **8.10.0**, Gradle **8.11.1**
 - Jetpack Compose and Material 3; Compose BOM **2024.09.00**

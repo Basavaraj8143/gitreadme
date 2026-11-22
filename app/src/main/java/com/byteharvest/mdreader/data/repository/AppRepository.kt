@@ -77,7 +77,7 @@ class AppRepository(
     fun treePaths(id: String) = dao.treePaths(id)
     fun recentDocs(limit: Int) = dao.recent(limit)
     suspend fun removeFromHistory(repoId: String, path: String) {
-        if (repoId == LOCAL_REPOSITORY_ID) File(path).delete()
+        if (repoId == LOCAL_REPOSITORY_ID && !dao.hasBookmark(repoId, path)) File(path).delete()
         dao.deleteHistory(repoId, path)
     }
     fun bookmarks() = dao.bookmarks()

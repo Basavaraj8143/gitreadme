@@ -66,11 +66,13 @@ import com.byteharvest.mdreader.core.markdown.Inline
 import com.byteharvest.mdreader.core.markdown.MarkdownDoc
 import com.byteharvest.mdreader.core.markdown.MdBlock
 import com.byteharvest.mdreader.core.markdown.plain
+import com.byteharvest.mdreader.data.local.ReaderFontMode
 
 class ImageSpec(val url: String, val headers: Map<String, String>, val cache: Boolean)
 
 class RenderCtx(
     val baseSp: Float,
+    val readerFontMode: ReaderFontMode,
     val query: String,
     val activeBlock: Int,
     val onLink: (String) -> Unit,
@@ -130,7 +132,12 @@ fun MarkdownBlocks(doc: MarkdownDoc, listState: LazyListState, ctx: RenderCtx, m
 @Composable
 private fun bodyStyle(ctx: RenderCtx, scale: Float = 1f): TextStyle =
     MaterialTheme.typography.bodyLarge.copy(
-        fontFamily = FontFamily.Serif,
+        fontFamily = when (ctx.readerFontMode) {
+            ReaderFontMode.SYSTEM -> FontFamily.Default
+            ReaderFontMode.SANS_SERIF -> FontFamily.SansSerif
+            ReaderFontMode.SERIF -> FontFamily.Serif
+            ReaderFontMode.MONOSPACE -> FontFamily.Monospace
+        },
         fontSize = (ctx.baseSp * scale).sp,
         lineHeight = (ctx.baseSp * scale * 1.7f).sp,
         color = MaterialTheme.colorScheme.onSurface,

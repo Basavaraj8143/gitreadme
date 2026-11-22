@@ -15,6 +15,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +51,7 @@ import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.SettingsStore
+import com.byteharvest.mdreader.data.local.ReaderFontMode
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.repository.BookmarkBackup
 import com.byteharvest.mdreader.data.work.RepositoryAutoSync
@@ -65,6 +68,12 @@ import org.json.JSONObject
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
+    val readerFontMode: StateFlow<ReaderFontMode> =
+        c.settings.readerFontMode.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SettingsStore.DEFAULT_READER_FONT_MODE,
+        )
     val renderedTextSelectionEnabled: StateFlow<Boolean> =
         c.settings.renderedTextSelectionEnabled.stateIn(
             viewModelScope,
@@ -74,6 +83,9 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val auth = c.repository.authState
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
+    fun setReaderFontMode(mode: ReaderFontMode) {
+        viewModelScope.launch { c.settings.setReaderFontMode(mode) }
+    }
     fun setRenderedTextSelectionEnabled(enabled: Boolean) {
         viewModelScope.launch { c.settings.setRenderedTextSelectionEnabled(enabled) }
     }
@@ -107,6 +119,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                     JSONObject()
                         .put("theme", settings.theme.name)
                         .put("fontSizeSp", settings.fontSizeSp.toDouble())
+                        .put("readerFontMode", settings.readerFontMode.name)
                         .put("renderedTextSelectionEnabled", settings.renderedTextSelectionEnabled),
                 )
                 .put("bookmarks", JSONArray().apply {
@@ -142,6 +155,12 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             val theme = ThemeMode.valueOf(settingData.getString("theme"))
             val fontSize = settingData.getDouble("fontSizeSp").toFloat()
             require(fontSize.isFinite()) { "Backup has an invalid font size." }
+            val readerFontMode = if (settingData.has("readerFontMode")) {
+                runCatching { ReaderFontMode.valueOf(settingData.getString("readerFontMode")) }
+                    .getOrDefault(SettingsStore.DEFAULT_READER_FONT_MODE)
+            } else {
+                SettingsStore.DEFAULT_READER_FONT_MODE
+            }
             val renderedTextSelectionEnabled =
                 if (settingData.has("renderedTextSelectionEnabled")) {
                     settingData.getBoolean("renderedTextSelectionEnabled")
@@ -163,6 +182,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
 
             c.settings.setTheme(theme)
             c.settings.setFontSize(fontSize)
+            c.settings.setReaderFontMode(readerFontMode)
             c.settings.setRenderedTextSelectionEnabled(renderedTextSelectionEnabled)
             val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
             if (skipped > 0) {
@@ -182,12 +202,14 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val vm = appViewModel { c, _ -> SettingsViewModel(c) }
     val theme by vm.theme.collectAsStateWithLifecycle()
     val fontSp by vm.fontSp.collectAsStateWithLifecycle()
+    val readerFontMode by vm.readerFontMode.collectAsStateWithLifecycle()
     val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }
     var confirmSignOut by remember { mutableStateOf(false) }
+    var fontExpanded by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch { Toast.makeText(context, vm.exportBackup(uri), Toast.LENGTH_LONG).show() }
     }
@@ -231,13 +253,66 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                 title = "Reader",
                 description = "Adjust reading size and text interaction.",
             ) {
-                Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleSmall)
-                Slider(
-                    value = fontSp,
-                    onValueChange = { vm.setFont(it) },
-                    valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
-                    steps = 7,
-                )
+                val fontLabel = when (readerFontMode) {
+                    ReaderFontMode.SYSTEM -> "System"
+                    ReaderFontMode.SANS_SERIF -> "Sans serif"
+                    ReaderFontMode.SERIF -> "Serif"
+                    ReaderFontMode.MONOSPACE -> "Monospace"
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = fontExpanded,
+                            role = Role.Button,
+                            onClick = { fontExpanded = !fontExpanded },
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Fonts", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "$fontLabel · ${fontSp.toInt()} sp",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        if (fontExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = if (fontExpanded) "Collapse font settings" else "Expand font settings",
+                    )
+                }
+                if (fontExpanded) {
+                    Column(Modifier.padding(top = 8.dp)) {
+                        Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleSmall)
+                        Slider(
+                            value = fontSp,
+                            onValueChange = { vm.setFont(it) },
+                            valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
+                            steps = 7,
+                        )
+                        ReaderFontMode.values().forEach { mode ->
+                            val label = when (mode) {
+                                ReaderFontMode.SYSTEM -> "System"
+                                ReaderFontMode.SANS_SERIF -> "Sans serif"
+                                ReaderFontMode.SERIF -> "Serif"
+                                ReaderFontMode.MONOSPACE -> "Monospace"
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().selectable(
+                                    selected = readerFontMode == mode,
+                                    role = Role.RadioButton,
+                                    onClick = { vm.setReaderFontMode(mode) },
+                                ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = readerFontMode == mode, onClick = null)
+                                Text(label, Modifier.padding(vertical = 12.dp))
+                            }
+                        }
+                    }
+                }
                 Row(
                     Modifier.fillMaxWidth().selectable(
                         selected = renderedTextSelectionEnabled,
@@ -293,7 +368,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
 
             SettingsSection(
                 title = "Backup & restore",
-                description = "Export or restore your theme, font size, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
+                description = "Export or restore your theme, reader font size and family, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
             ) {
                 OutlinedButton(onClick = { backupLauncher.launch("gitread-me-backup.json") }) {
                     Text("Export settings and bookmarks")
