@@ -6,20 +6,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -45,16 +43,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -62,6 +61,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
+import com.byteharvest.mdreader.R
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
 import com.byteharvest.mdreader.data.local.ReaderFontMode
 import com.byteharvest.mdreader.data.local.SettingsStore
@@ -69,15 +69,27 @@ import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.repository.BookmarkBackup
 import com.byteharvest.mdreader.data.work.RepositoryAutoSync
 import com.byteharvest.mdreader.ui.appViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+
+data class BackupState(
+    val exporting: Boolean = false,
+    val importing: Boolean = false,
+)
 
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
@@ -96,6 +108,13 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         )
     val auth = c.repository.authState
 
+    // Backup state lives in the ViewModel so it survives rotation / navigation.
+    private val _backup = MutableStateFlow(BackupState())
+    val backup: StateFlow<BackupState> = _backup.asStateFlow()
+
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages: Flow<String> = _messages.receiveAsFlow()
+
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
     fun setReaderFontMode(mode: ReaderFontMode) {
@@ -106,7 +125,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun signIn(token: String) {
-        viewModelScope.launch { c.repository.signIn(token) }
+        viewModelScope.launch { c.repository.signIn(token.trim()) }
     }
 
     fun signOut() {
@@ -122,7 +141,33 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    suspend fun exportBackup(uri: Uri): String = withContext(Dispatchers.IO) {
+    fun exportBackup(uri: Uri) {
+        if (_backup.value.exporting) return
+        _backup.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            val message = try {
+                writeBackup(uri)
+            } finally {
+                _backup.update { it.copy(exporting = false) }
+            }
+            _messages.send(message)
+        }
+    }
+
+    fun importBackup(uri: Uri) {
+        if (_backup.value.importing) return
+        _backup.update { it.copy(importing = true) }
+        viewModelScope.launch {
+            val message = try {
+                readBackup(uri)
+            } finally {
+                _backup.update { it.copy(importing = false) }
+            }
+            _messages.send(message)
+        }
+    }
+
+    private suspend fun writeBackup(uri: Uri): String = withContext(Dispatchers.IO) {
         try {
             val settings = c.settings.snapshot()
             val bookmarks = c.repository.bookmarks().first().filter { it.repoId != LOCAL_REPOSITORY_ID }
@@ -150,26 +195,34 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                         )
                     }
                 })
-            val output = c.appContext.contentResolver.openOutputStream(uri)
+            // Fully serialize BEFORE opening the stream so a failure can't leave a half-written file.
+            val json = root.toString(2)
+            // "wt" truncates existing content on providers that default to append/no-truncate.
+            val output = c.appContext.contentResolver.openOutputStream(uri, "wt")
                 ?: return@withContext "Could not open the selected backup file."
-            output.bufferedWriter(Charsets.UTF_8).use { it.write(root.toString(2)) }
+            output.bufferedWriter(Charsets.UTF_8).use { it.write(json) }
             "Settings and bookmarks exported."
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             "Backup export failed: ${e.message ?: "Could not write the file."}"
         }
     }
 
-    suspend fun importBackup(uri: Uri): String = withContext(Dispatchers.IO) {
+    private suspend fun readBackup(uri: Uri): String = withContext(Dispatchers.IO) {
         try {
             val input = c.appContext.contentResolver.openInputStream(uri)
                 ?: return@withContext "Could not open the selected backup file."
             val root = input.bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
             if (root.getInt("formatVersion") != 1) return@withContext "This backup format is not supported."
 
+            // ---- Parse + validate everything first; nothing is applied until all of it is valid. ----
             val settingData = root.getJSONObject("settings")
-            val theme = ThemeMode.valueOf(settingData.getString("theme"))
-            val fontSize = settingData.getDouble("fontSizeSp").toFloat()
-            require(fontSize.isFinite()) { "Backup has an invalid font size." }
+            val theme = runCatching { ThemeMode.valueOf(settingData.getString("theme")) }
+                .getOrDefault(ThemeMode.SYSTEM)
+            val rawFontSize = settingData.getDouble("fontSizeSp").toFloat()
+            require(rawFontSize.isFinite()) { "Backup has an invalid font size." }
+            val fontSize = rawFontSize.coerceIn(SettingsStore.MIN_FONT, SettingsStore.MAX_FONT)
             val readerFontMode = if (settingData.has("readerFontMode")) {
                 runCatching { ReaderFontMode.valueOf(settingData.getString("readerFontMode")) }
                     .getOrDefault(SettingsStore.DEFAULT_READER_FONT_MODE)
@@ -195,16 +248,20 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                 )
             }
 
+            // ---- Apply: riskiest step (DB writes) first, so a failure leaves settings untouched. ----
+            val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
             c.settings.setTheme(theme)
             c.settings.setFontSize(fontSize)
             c.settings.setReaderFontMode(readerFontMode)
             c.settings.setRenderedTextSelectionEnabled(renderedTextSelectionEnabled)
-            val (restored, skipped) = c.repository.restoreBookmarks(bookmarks)
+
             if (skipped > 0) {
                 "$restored bookmarks restored; $skipped skipped. Save their repositories first, then import again."
             } else {
                 "Settings and $restored bookmarks restored."
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             "Backup import failed: ${e.message ?: "The file is invalid or unreadable."}"
         }
@@ -220,32 +277,29 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val readerFontMode by vm.readerFontMode.collectAsStateWithLifecycle()
     val renderedTextSelectionEnabled by vm.renderedTextSelectionEnabled.collectAsStateWithLifecycle()
     val auth by vm.auth.collectAsStateWithLifecycle()
+    val backup by vm.backup.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }
     var confirmSignOut by remember { mutableStateOf(false) }
-    var isExporting by remember { mutableStateOf(false) }
-    var isImporting by remember { mutableStateOf(false) }
+
+    // Local thumb state: smooth dragging, persisted only when the drag finishes.
+    var sliderValue by remember(fontSp) { mutableFloatStateOf(fontSp) }
+
+    // Show backup results from the ViewModel (survives rotation; no lost toasts).
+    LaunchedEffect(vm) {
+        vm.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+
+    // Clear the token field only after a successful sign-in, so failures don't force a retype.
+    LaunchedEffect(auth.signedIn) {
+        if (auth.signedIn) token = ""
+    }
 
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) {
-            isExporting = true
-            scope.launch {
-                val result = vm.exportBackup(uri)
-                isExporting = false
-                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
-            }
-        }
+        if (uri != null) vm.exportBackup(uri)
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            isImporting = true
-            scope.launch {
-                val result = vm.importBackup(uri)
-                isImporting = false
-                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
-            }
-        }
+        if (uri != null) vm.importBackup(uri)
     }
 
     Scaffold(
@@ -257,8 +311,8 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
         },
     ) { pad ->
         LazyColumn(
-            modifier = Modifier.padding(pad).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            modifier = Modifier.padding(pad).fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Appearance Section
@@ -295,11 +349,12 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                     SettingsSectionContent(
                         title = "Reader Font Size",
                         description = "Adjust the text size for comfortable reading",
-                        trailing = "${fontSp.toInt()} sp",
+                        trailing = "${sliderValue.toInt()} sp",
                     ) {
                         FontSizeSlider(
-                            value = fontSp,
-                            onValueChange = { vm.setFont(it) },
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            onValueChangeFinished = { vm.setFont(sliderValue) },
                         )
                     }
                 }
@@ -308,9 +363,9 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             // Reader Section
             item {
                 SettingsCard(
-                    icon = Icons.Filled.MenuBook,
+                    icon = ImageVector.vectorResource(R.drawable.ic_shredder),
                     title = "Reader",
-                    description = "Adjust reading size and text interaction.",
+                    description = "Control how rendered text behaves in the reader.",
                 ) {
                     SettingsToggleItem(
                         title = "Select and copy rendered text",
@@ -351,31 +406,31 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                                 singleLine = true,
                                 label = { Text("Personal access token") },
                                 visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    autoCorrectEnabled = false,
+                                ),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Button(
-                                onClick = { vm.signIn(token); token = "" },
+                                onClick = { vm.signIn(token) },
                                 enabled = token.isNotBlank() && !auth.busy,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 if (auth.busy) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.padding(end = 8.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                    )
+                                    ButtonSpinner(color = MaterialTheme.colorScheme.onPrimary)
                                 }
                                 Text(if (auth.busy) "Signing in..." else "Sign in")
                             }
                         }
-                    }
-                    auth.message?.let {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
+                        auth.message?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -399,9 +454,9 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             // Backup Section
             item {
                 SettingsCard(
-                    icon = Icons.Filled.Backup,
+                    icon = ImageVector.vectorResource(R.drawable.ic_database_backup),
                     title = "Backup & Restore",
-                    description = "Export or restore your theme, font size, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
+                    description = "Export or restore your theme, reader font, font size, text selection setting, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
                 ) {
                     SettingsSectionContent(
                         title = "Export",
@@ -409,14 +464,11 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                     ) {
                         Button(
                             onClick = { backupLauncher.launch("gitread-me-backup.json") },
-                            enabled = !isExporting,
+                            enabled = !backup.exporting,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            if (isExporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.padding(end = 8.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
+                            if (backup.exporting) {
+                                ButtonSpinner(color = MaterialTheme.colorScheme.onPrimary)
                                 Text("Exporting...")
                             } else {
                                 Text("Export settings and bookmarks")
@@ -432,14 +484,11 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                     ) {
                         OutlinedButton(
                             onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) },
-                            enabled = !isImporting,
+                            enabled = !backup.importing,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            if (isImporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.padding(end = 8.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                            if (backup.importing) {
+                                ButtonSpinner(color = MaterialTheme.colorScheme.primary)
                                 Text("Importing...")
                             } else {
                                 Text("Import settings and bookmarks")
@@ -463,6 +512,15 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
 }
 
 @Composable
+private fun ButtonSpinner(color: androidx.compose.ui.graphics.Color) {
+    CircularProgressIndicator(
+        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+        color = color,
+        strokeWidth = 2.dp,
+    )
+}
+
+@Composable
 private fun SettingsCard(
     icon: ImageVector,
     title: String,
@@ -472,7 +530,7 @@ private fun SettingsCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -558,13 +616,13 @@ private fun ThemeSelector(
     SingleChoiceSegmentedButtonRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
-        ThemeMode.values().forEachIndexed { index, mode ->
+        ThemeMode.entries.forEachIndexed { index, mode ->
             SegmentedButton(
                 selected = selected == mode,
                 onClick = { onSelect(mode) },
                 shape = SegmentedButtonDefaults.itemShape(
                     index = index,
-                    count = ThemeMode.values().size,
+                    count = ThemeMode.entries.size,
                 ),
             ) {
                 Text(
@@ -583,11 +641,13 @@ private fun ThemeSelector(
 private fun FontSizeSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Slider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
             steps = 7,
             modifier = Modifier.fillMaxWidth(),
@@ -618,13 +678,13 @@ private fun FontModeSelector(
     SingleChoiceSegmentedButtonRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
-        ReaderFontMode.values().forEachIndexed { index, mode ->
+        ReaderFontMode.entries.forEachIndexed { index, mode ->
             SegmentedButton(
                 selected = selected == mode,
                 onClick = { onSelect(mode) },
                 shape = SegmentedButtonDefaults.itemShape(
                     index = index,
-                    count = ReaderFontMode.values().size,
+                    count = ReaderFontMode.entries.size,
                 ),
             ) {
                 Text(
@@ -668,7 +728,7 @@ private fun SettingsToggleItem(
             )
         },
         colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
         modifier = Modifier.fillMaxWidth(),
     )

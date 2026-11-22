@@ -1,5 +1,7 @@
 package com.byteharvest.mdreader.ui.home
 
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,19 +12,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
@@ -33,6 +35,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -43,10 +46,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,9 +61,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,15 +80,43 @@ import com.byteharvest.mdreader.ui.appViewModel
 import com.byteharvest.mdreader.ui.components.DocListItem
 import com.byteharvest.mdreader.ui.components.EmptyState
 import com.byteharvest.mdreader.ui.components.relativeTime
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class OpenState(val loading: Boolean = false, val error: String? = null)
 
+sealed interface ImportResult {
+    data class Success(val path: String) : ImportResult
+    data class Failure(val message: String) : ImportResult
+}
+
+// Many providers report .md files as text/plain or octet-stream, so accept those too.
+private val MARKDOWN_MIME_TYPES = arrayOf(
+    "text/markdown",
+    "text/x-markdown",
+    "application/markdown",
+    "text/plain",
+    "application/octet-stream",
+)
+
+private val MARKDOWN_EXTENSIONS = listOf(".md", ".markdown", ".mdown", ".mkd", ".txt")
+
 @Composable
-private fun HomeHero(onOpenGitHub: () -> Unit, onOpenFile: () -> Unit) {
+private fun HomeHero(
+    onOpenGitHub: () -> Unit,
+    onOpenFile: () -> Unit,
+    openFileEnabled: Boolean,
+) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val titleColor = if (dark) Color(0xFFF9F6FF) else Color(0xFF211448)
     val bodyColor = if (dark) Color(0xFFE0D7F5) else Color(0xFF594B7B)
@@ -89,18 +124,20 @@ private fun HomeHero(onOpenGitHub: () -> Unit, onOpenFile: () -> Unit) {
     val buttonText = if (dark) Color(0xFF211448) else Color.White
     val outlineColor = if (dark) Color(0xFFE6DFFF) else Color(0xFF6549BD)
     val cardShape = RoundedCornerShape(28.dp)
+    val gradient = remember(dark) {
+        Brush.linearGradient(
+            if (dark) listOf(Color(0xFF402C83), Color(0xFF271951))
+            else listOf(Color(0xFFF3ECFF), Color(0xFFE9DEFF)),
+        )
+    }
 
     Box(
         Modifier
+            .widthIn(max = 640.dp)
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clip(cardShape)
-            .background(
-                Brush.linearGradient(
-                    if (dark) listOf(Color(0xFF402C83), Color(0xFF271951))
-                    else listOf(Color(0xFFF3ECFF), Color(0xFFE9DEFF)),
-                )
-            )
+            .background(gradient)
     ) {
         ReadingStackIllustration(
             dark = dark,
@@ -121,13 +158,14 @@ private fun HomeHero(onOpenGitHub: () -> Unit, onOpenFile: () -> Unit) {
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = titleColor,
-                modifier = Modifier.widthIn(max = 245.dp),
+                // Fraction keeps text clear of the illustration on narrow phones; max caps it on wide screens.
+                modifier = Modifier.fillMaxWidth(0.62f).widthIn(max = 245.dp),
             )
             Text(
                 "Open a GitHub repository or bring in a Markdown file to get started.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = bodyColor,
-                modifier = Modifier.widthIn(max = 270.dp),
+                modifier = Modifier.fillMaxWidth(0.62f).widthIn(max = 270.dp),
             )
             Row(
                 Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -149,6 +187,7 @@ private fun HomeHero(onOpenGitHub: () -> Unit, onOpenFile: () -> Unit) {
                 }
                 OutlinedButton(
                     onClick = onOpenFile,
+                    enabled = openFileEnabled,
                     modifier = Modifier.weight(1f).height(48.dp),
                     shape = RoundedCornerShape(50),
                     border = BorderStroke(1.25.dp, outlineColor.copy(alpha = 0.8f)),
@@ -200,13 +239,55 @@ private fun ReadingStackIllustration(dark: Boolean, modifier: Modifier = Modifie
     }
 }
 
-class HomeViewModel(c: AppContainer) : ViewModel() {
+class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val repository = c.repository
     val recent: StateFlow<List<RecentDoc>?> =
         repository.recentDocs(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    private val _importing = MutableStateFlow(false)
+    val importing: StateFlow<Boolean> = _importing.asStateFlow()
+
+    private val _importResults = Channel<ImportResult>(Channel.BUFFERED)
+    val importResults: Flow<ImportResult> = _importResults.receiveAsFlow()
+
     fun removeFromRecent(doc: RecentDoc) {
         viewModelScope.launch { repository.removeFromHistory(doc.repoId, doc.path) }
+    }
+
+    /** Runs off the main thread, survives rotation, and reports back through [importResults]. */
+    fun openLocalFile(uri: Uri) {
+        if (_importing.value) return
+        _importing.value = true
+        viewModelScope.launch {
+            val result: ImportResult = try {
+                withContext(Dispatchers.IO) {
+                    val name = displayName(uri)
+                    if (name != null && !looksLikeMarkdown(name)) {
+                        ImportResult.Failure("Please choose a Markdown (.md) file.")
+                    } else {
+                        ImportResult.Success(importLocalMarkdown(c.appContext, uri).absolutePath)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ImportResult.Failure("Failed to open file: ${e.message ?: "Unreadable file"}")
+            } finally {
+                _importing.value = false
+            }
+            _importResults.send(result)
+        }
+    }
+
+    private fun displayName(uri: Uri): String? = runCatching {
+        c.appContext.contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    }.getOrNull()
+
+    private fun looksLikeMarkdown(name: String): Boolean {
+        val lower = name.lowercase()
+        return MARKDOWN_EXTENSIONS.any { lower.endsWith(it) }
     }
 }
 
@@ -220,19 +301,21 @@ fun HomeScreen(
 ) {
     val vm = appViewModel { c, _ -> HomeViewModel(c) }
     val recent by vm.recent.collectAsStateWithLifecycle()
+    val importing by vm.importing.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val localFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                try {
-                    val targetFile = importLocalMarkdown(context, uri)
-                    onOpenDoc(LOCAL_REPOSITORY_ID, targetFile.absolutePath)
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Failed to open file: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+    val currentOnOpenDoc by rememberUpdatedState(onOpenDoc)
+
+    LaunchedEffect(vm) {
+        vm.importResults.collect { result ->
+            when (result) {
+                is ImportResult.Success -> currentOnOpenDoc(LOCAL_REPOSITORY_ID, result.path)
+                is ImportResult.Failure -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    val localFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.openLocalFile(uri)
     }
 
     Scaffold(
@@ -257,19 +340,29 @@ fun HomeScreen(
             contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                HomeHero(
-                    onOpenGitHub = onOpenGitHub,
-                    onOpenFile = { localFileLauncher.launch(arrayOf("text/markdown", "application/markdown")) },
-                )
+            if (importing) {
+                item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
             }
             item {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Recently opened", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                // Centers the hero and caps its width on tablets / landscape.
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    HomeHero(
+                        onOpenGitHub = onOpenGitHub,
+                        onOpenFile = { localFileLauncher.launch(MARKDOWN_MIME_TYPES) },
+                        openFileEnabled = !importing,
+                    )
                 }
+            }
+            item {
+                Text(
+                    "Recently opened",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 4.dp)
+                        .semantics { heading() },
+                )
             }
             val list = recent
             if (list != null && list.isEmpty()) {
@@ -323,7 +416,17 @@ fun HomeScreen(
                             }
                         },
                     ) {
-                        Box {
+                        Box(
+                            // TalkBack / switch-access users can't swipe, so expose delete as an action.
+                            Modifier.semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("Remove from recent") {
+                                        vm.removeFromRecent(d)
+                                        true
+                                    }
+                                )
+                            }
+                        ) {
                             DocListItem(
                                 title = d.title,
                                 subtitle = if (d.repoId == LOCAL_REPOSITORY_ID) {
@@ -341,13 +444,7 @@ fun HomeScreen(
                                 onDismissRequest = { menuExpanded = false },
                             ) {
                                 DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            "Remove from recent",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            textAlign = TextAlign.End,
-                                        )
-                                    },
+                                    text = { Text("Remove from recent") },
                                     onClick = {
                                         menuExpanded = false
                                         vm.removeFromRecent(d)

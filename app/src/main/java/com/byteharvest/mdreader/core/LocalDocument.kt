@@ -22,13 +22,17 @@ fun localDocumentFileName(sourceUri: String, displayName: String): String {
 
 fun isMarkdownDocument(displayName: String, mimeType: String?): Boolean {
     val extensionMatches = displayName.endsWith(".md", ignoreCase = true) ||
-        displayName.endsWith(".markdown", ignoreCase = true)
+        displayName.endsWith(".markdown", ignoreCase = true) ||
+        displayName.endsWith(".mdown", ignoreCase = true) ||
+        displayName.endsWith(".mkd", ignoreCase = true) ||
+        displayName.endsWith(".txt", ignoreCase = true)
     val hasNoExtension = displayName.substringAfterLast('.', "").isEmpty()
     val mimeTypeMatches = mimeType?.substringBefore(';')?.trim()?.lowercase() in setOf(
         "text/markdown",
         "application/markdown",
         "application/x-markdown",
         "text/x-markdown",
+        "text/plain",
     )
     return extensionMatches || (hasNoExtension && mimeTypeMatches)
 }
