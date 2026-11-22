@@ -9,24 +9,36 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -38,10 +50,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -50,8 +63,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.byteharvest.mdreader.AppContainer
 import com.byteharvest.mdreader.data.local.LOCAL_REPOSITORY_ID
-import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ReaderFontMode
+import com.byteharvest.mdreader.data.local.SettingsStore
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.data.repository.BookmarkBackup
 import com.byteharvest.mdreader.data.work.RepositoryAutoSync
@@ -65,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+
 class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val theme: StateFlow<ThemeMode> = c.settings.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     val fontSp: StateFlow<Float> = c.settings.fontSizeSp.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT)
@@ -81,6 +95,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             SettingsStore.DEFAULT_RENDERED_TEXT_SELECTION,
         )
     val auth = c.repository.authState
+
     fun setTheme(m: ThemeMode) { viewModelScope.launch { c.settings.setTheme(m) } }
     fun setFont(sp: Float) { viewModelScope.launch { c.settings.setFontSize(sp) } }
     fun setReaderFontMode(mode: ReaderFontMode) {
@@ -209,12 +224,28 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
     val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }
     var confirmSignOut by remember { mutableStateOf(false) }
-    var fontExpanded by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
+    var isImporting by remember { mutableStateOf(false) }
+
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) scope.launch { Toast.makeText(context, vm.exportBackup(uri), Toast.LENGTH_LONG).show() }
+        if (uri != null) {
+            isExporting = true
+            scope.launch {
+                val result = vm.exportBackup(uri)
+                isExporting = false
+                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+            }
+        }
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch { Toast.makeText(context, vm.importBackup(uri), Toast.LENGTH_LONG).show() }
+        if (uri != null) {
+            isImporting = true
+            scope.launch {
+                val result = vm.importBackup(uri)
+                isImporting = false
+                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     Scaffold(
@@ -225,156 +256,196 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
             )
         },
     ) { pad ->
-        Column(
-            Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+        LazyColumn(
+            modifier = Modifier.padding(pad).fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SettingsSection(
-                title = "Appearance",
-                description = "Choose how Gitread.me looks across the app and reader.",
-            ) {
-                Text("Theme", style = MaterialTheme.typography.titleSmall)
-                ThemeMode.values().forEach { m ->
-                    Row(
-                        Modifier.fillMaxWidth().selectable(
-                            selected = theme == m,
-                            role = Role.RadioButton,
-                            onClick = { vm.setTheme(m) },
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
+            // Appearance Section
+            item {
+                SettingsCard(
+                    icon = Icons.Filled.Palette,
+                    title = "Appearance",
+                    description = "Choose how Gitread.me looks across the app and reader.",
+                ) {
+                    SettingsSectionContent(
+                        title = "Theme",
+                        description = "Select your preferred color scheme",
                     ) {
-                        RadioButton(selected = theme == m, onClick = null)
-                        Text(m.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.padding(vertical = 12.dp))
+                        ThemeSelector(
+                            selected = theme,
+                            onSelect = { vm.setTheme(it) },
+                        )
+                    }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingsSectionContent(
+                        title = "Reader Font",
+                        description = "Choose the font family for reading",
+                    ) {
+                        FontModeSelector(
+                            selected = readerFontMode,
+                            onSelect = { vm.setReaderFontMode(it) },
+                        )
+                    }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingsSectionContent(
+                        title = "Reader Font Size",
+                        description = "Adjust the text size for comfortable reading",
+                        trailing = "${fontSp.toInt()} sp",
+                    ) {
+                        FontSizeSlider(
+                            value = fontSp,
+                            onValueChange = { vm.setFont(it) },
+                        )
                     }
                 }
             }
 
-            SettingsSection(
-                title = "Reader",
-                description = "Adjust reading size and text interaction.",
-            ) {
-                val fontLabel = when (readerFontMode) {
-                    ReaderFontMode.SYSTEM -> "System"
-                    ReaderFontMode.SANS_SERIF -> "Sans serif"
-                    ReaderFontMode.SERIF -> "Serif"
-                    ReaderFontMode.MONOSPACE -> "Monospace"
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = fontExpanded,
-                            role = Role.Button,
-                            onClick = { fontExpanded = !fontExpanded },
-                        )
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            // Reader Section
+            item {
+                SettingsCard(
+                    icon = Icons.Filled.MenuBook,
+                    title = "Reader",
+                    description = "Adjust reading size and text interaction.",
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Fonts", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "$fontLabel · ${fontSp.toInt()} sp",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        if (fontExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                        contentDescription = if (fontExpanded) "Collapse font settings" else "Expand font settings",
+                    SettingsToggleItem(
+                        title = "Select and copy rendered text",
+                        description = "Allow long-press selection in the rendered reader.",
+                        checked = renderedTextSelectionEnabled,
+                        onCheckedChange = { vm.setRenderedTextSelectionEnabled(it) },
                     )
                 }
-                if (fontExpanded) {
-                    Column(Modifier.padding(top = 8.dp)) {
-                        Text("Reader font size: ${fontSp.toInt()} sp", style = MaterialTheme.typography.titleSmall)
-                        Slider(
-                            value = fontSp,
-                            onValueChange = { vm.setFont(it) },
-                            valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
-                            steps = 7,
-                        )
-                        ReaderFontMode.values().forEach { mode ->
-                            val label = when (mode) {
-                                ReaderFontMode.SYSTEM -> "System"
-                                ReaderFontMode.SANS_SERIF -> "Sans serif"
-                                ReaderFontMode.SERIF -> "Serif"
-                                ReaderFontMode.MONOSPACE -> "Monospace"
-                            }
-                            Row(
-                                Modifier.fillMaxWidth().selectable(
-                                    selected = readerFontMode == mode,
-                                    role = Role.RadioButton,
-                                    onClick = { vm.setReaderFontMode(mode) },
-                                ),
-                                verticalAlignment = Alignment.CenterVertically,
+            }
+
+            // GitHub Access Section
+            item {
+                SettingsCard(
+                    icon = Icons.Filled.Code,
+                    title = "GitHub Access",
+                    description = "Public repositories work without signing in. A read-only token enables private repositories and higher rate limits. Tokens are stored encrypted in the Android Keystore.",
+                ) {
+                    if (auth.signedIn) {
+                        SettingsSectionContent(
+                            title = "Signed in",
+                            description = auth.message ?: "Your GitHub token is active.",
+                        ) {
+                            OutlinedButton(
+                                onClick = { confirmSignOut = true },
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
-                                RadioButton(selected = readerFontMode == mode, onClick = null)
-                                Text(label, Modifier.padding(vertical = 12.dp))
+                                Text("Sign out")
+                            }
+                        }
+                    } else {
+                        SettingsSectionContent(
+                            title = "Sign in with GitHub",
+                            description = "Enter your personal access token to access private repositories",
+                        ) {
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = { token = it },
+                                singleLine = true,
+                                label = { Text("Personal access token") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(
+                                onClick = { vm.signIn(token); token = "" },
+                                enabled = token.isNotBlank() && !auth.busy,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (auth.busy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.padding(end = 8.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
+                                Text(if (auth.busy) "Signing in..." else "Sign in")
                             }
                         }
                     }
-                }
-                Row(
-                    Modifier.fillMaxWidth().selectable(
-                        selected = renderedTextSelectionEnabled,
-                        role = Role.Switch,
-                        onClick = { vm.setRenderedTextSelectionEnabled(!renderedTextSelectionEnabled) },
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                        Text("Select and copy rendered text")
+                    auth.message?.let {
                         Text(
-                            "Allow long-press selection in the rendered reader.",
+                            it,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
                     }
-                    Switch(
-                        checked = renderedTextSelectionEnabled,
-                        onCheckedChange = null,
-                    )
                 }
             }
 
-            SettingsSection(
-                title = "GitHub access",
-                description = "Public repositories work without signing in. A read-only token enables private repositories and higher rate limits. Tokens are stored encrypted in the Android Keystore.",
-            ) {
-                if (auth.signedIn) {
-                    OutlinedButton({ confirmSignOut = true }) { Text("Sign out") }
-                } else {
-                    OutlinedTextField(
-                        token,
-                        { token = it },
-                        singleLine = true,
-                        label = { Text("Personal access token") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            // Repositories Section
+            item {
+                SettingsCard(
+                    icon = Icons.Filled.Folder,
+                    title = "Repositories & Storage",
+                    description = "Manage saved repositories, offline syncing, and app-managed storage.",
+                ) {
+                    OutlinedButton(
+                        onClick = onRepos,
                         modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button({ vm.signIn(token); token = "" }, enabled = token.isNotBlank() && !auth.busy) {
-                        Text("Sign in")
+                    ) {
+                        Text("Open repositories & storage")
                     }
                 }
-                auth.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
 
-            SettingsSection(
-                title = "Repositories & storage",
-                description = "Manage saved repositories, offline syncing, and app-managed storage.",
-            ) {
-                OutlinedButton(onRepos) { Text("Open repositories & storage") }
-            }
+            // Backup Section
+            item {
+                SettingsCard(
+                    icon = Icons.Filled.Backup,
+                    title = "Backup & Restore",
+                    description = "Export or restore your theme, font size, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
+                ) {
+                    SettingsSectionContent(
+                        title = "Export",
+                        description = "Save your settings and bookmarks to a file",
+                    ) {
+                        Button(
+                            onClick = { backupLauncher.launch("gitread-me-backup.json") },
+                            enabled = !isExporting,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (isExporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                                Text("Exporting...")
+                            } else {
+                                Text("Export settings and bookmarks")
+                            }
+                        }
+                    }
 
-            SettingsSection(
-                title = "Backup & restore",
-                description = "Export or restore your theme, reader font size and family, and bookmarks. Tokens and cached documents are not included. Save repositories on this device before importing their bookmarks.",
-            ) {
-                OutlinedButton(onClick = { backupLauncher.launch("gitread-me-backup.json") }) {
-                    Text("Export settings and bookmarks")
-                }
-                OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) }) {
-                    Text("Import settings and bookmarks")
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingsSectionContent(
+                        title = "Import",
+                        description = "Restore settings and bookmarks from a backup file",
+                    ) {
+                        OutlinedButton(
+                            onClick = { restoreLauncher.launch(arrayOf("application/json", "text/json")) },
+                            enabled = !isImporting,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (isImporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text("Importing...")
+                            } else {
+                                Text("Import settings and bookmarks")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -392,18 +463,213 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
 }
 
 @Composable
-private fun SettingsSection(
+private fun SettingsCard(
+    icon: ImageVector,
     title: String,
     description: String,
     content: @Composable () -> Unit,
 ) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Header with icon and title
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(4.dp),
+                )
+                Column {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            // Content
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionContent(
+    title: String,
+    description: String,
+    trailing: String? = null,
+    content: @Composable () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
-        Text(
-            description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            trailing?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
         content()
     }
+}
+
+@Composable
+private fun ThemeSelector(
+    selected: ThemeMode,
+    onSelect: (ThemeMode) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ThemeMode.values().forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = selected == mode,
+                onClick = { onSelect(mode) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = ThemeMode.values().size,
+                ),
+            ) {
+                Text(
+                    when (mode) {
+                        ThemeMode.SYSTEM -> "System"
+                        ThemeMode.LIGHT -> "Light"
+                        ThemeMode.DARK -> "Dark"
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontSizeSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = SettingsStore.MIN_FONT..SettingsStore.MAX_FONT,
+            steps = 7,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "Small",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "Large",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FontModeSelector(
+    selected: ReaderFontMode,
+    onSelect: (ReaderFontMode) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ReaderFontMode.values().forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = selected == mode,
+                onClick = { onSelect(mode) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = ReaderFontMode.values().size,
+                ),
+            ) {
+                Text(
+                    when (mode) {
+                        ReaderFontMode.SYSTEM -> "System"
+                        ReaderFontMode.SANS_SERIF -> "Sans"
+                        ReaderFontMode.SERIF -> "Serif"
+                        ReaderFontMode.MONOSPACE -> "Mono"
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleItem(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        },
+        supportingContent = {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
