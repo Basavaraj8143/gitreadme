@@ -54,6 +54,12 @@ class SettingsStore(private val context: Context) {
     suspend fun setRenderedTextSelectionEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[renderedTextSelectionKey] = enabled }
     }
+
+    suspend fun getTheme(): ThemeMode {
+        val prefs = context.settingsDataStore.data.first()
+        return runCatching { ThemeMode.valueOf(prefs[themeKey] ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM)
+    }
+
     suspend fun setAutoSyncEnabled(repoId: String, enabled: Boolean) {
         context.settingsDataStore.edit { preferences ->
             val repoIds = preferences[autoSyncRepositoriesKey].orEmpty().toMutableSet()

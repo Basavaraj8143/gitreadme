@@ -15,14 +15,20 @@ import androidx.compose.ui.graphics.toArgb
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.ui.AppNav
 import com.byteharvest.mdreader.ui.theme.GitreadMeTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val settings = (application as App).container.settings
+
+        // Read theme synchronously to avoid flash of wrong theme
+        val initialTheme = runBlocking(Dispatchers.IO) { settings.getTheme() }
+
         setContent {
-            val mode by settings.theme.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+            val mode by settings.theme.collectAsStateWithLifecycle(initialValue = initialTheme)
             GitreadMeTheme(mode) {
                 val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
                 SideEffect {
