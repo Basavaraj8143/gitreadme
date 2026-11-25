@@ -16,6 +16,11 @@ class CommonmarkEngineTest {
         assertEquals(listOf(1, 2, 2, 3), doc.toc.map { it.level })
         assertEquals(listOf("title", "intro", "intro-1", "deep-dive"), doc.toc.map { it.anchor })
     }
+
+    @Test fun generatedAnchorsNeverCollideWithExplicitHeadingSlugs() {
+        val doc = engine.parse("# Intro\n\n# Intro\n\n# Intro-1\n\n# Intro\n")
+        assertEquals(listOf("intro", "intro-1", "intro-1-1", "intro-2"), doc.toc.map { it.anchor })
+    }
     @Test fun tablesParse() {
         val t = engine.parse("| a | b |\n|---|---|\n| 1 | 2 |\n").blocks.filterIsInstance<MdBlock.Table>().single()
         assertEquals(2, t.header.size); assertEquals(1, t.rows.size)

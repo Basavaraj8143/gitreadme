@@ -175,16 +175,20 @@ class CommonmarkEngine : MarkdownEngine {
 
     /** GitHub-style slugs; duplicates become slug, slug-1, slug-2 in document order. */
     private class AnchorGen {
-        private val seen = HashMap<String, Int>()
+        private val used = HashSet<String>()
+
         fun next(title: String): String {
             val base = title.lowercase()
                 .replace(Regex("[^\\p{L}\\p{N}\\s_-]"), "")
                 .trim()
                 .replace(Regex("\\s"), "-")
                 .ifEmpty { "section" }
-            val count = seen[base] ?: 0
-            seen[base] = count + 1
-            return if (count == 0) base else "$base-$count"
+            var slug = base
+            var suffix = 1
+            while (!used.add(slug)) {
+                slug = "$base-${suffix++}"
+            }
+            return slug
         }
     }
 }
