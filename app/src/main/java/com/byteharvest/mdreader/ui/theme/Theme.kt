@@ -35,7 +35,7 @@ object Spacing {
 }
 
 @Composable
-fun GitreadMeTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+fun GitreadmeTheme(mode: ThemeMode, content: @Composable () -> Unit) {
     val dark = when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false

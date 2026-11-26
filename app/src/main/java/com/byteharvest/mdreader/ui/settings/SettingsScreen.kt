@@ -320,7 +320,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                 SettingsCard(
                     icon = Icons.Filled.Palette,
                     title = "Appearance",
-                    description = "Choose how Gitread.me looks across the app and reader.",
+                    description = "Choose how Gitreadme looks across the app and reader.",
                 ) {
                     SettingsSectionContent(
                         title = "Theme",
@@ -463,7 +463,7 @@ fun SettingsScreen(onBack: () -> Unit, onRepos: () -> Unit) {
                         description = "Save your settings and bookmarks to a file",
                     ) {
                         Button(
-                            onClick = { backupLauncher.launch("gitread-me-backup.json") },
+                            onClick = { backupLauncher.launch("gitreadme-backup.json") },
                             enabled = !backup.exporting,
                             modifier = Modifier.fillMaxWidth(),
                         ) {

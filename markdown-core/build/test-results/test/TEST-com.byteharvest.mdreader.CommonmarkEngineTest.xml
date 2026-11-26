@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.byteharvest.mdreader.CommonmarkEngineTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-15T05:19:01" hostname="BASAVARAJ_N" time="0.167">
+<testsuite name="com.byteharvest.mdreader.CommonmarkEngineTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-25T14:33:00" hostname="BASAVARAJ_N" time="0.128">
   <properties/>
-  <testcase name="searchCountsMatchRenderedRuns" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.096"/>
-  <testcase name="taskListsParse" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.02"/>
-  <testcase name="tocPreservesLevelsAndDuplicatesGetStableAnchors" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.012"/>
-  <testcase name="htmlImgBecomesImage" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.024"/>
-  <testcase name="tablesParse" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.004"/>
-  <testcase name="fencedCodeKeepsLanguage" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.007"/>
+  <testcase name="generatedAnchorsNeverCollideWithExplicitHeadingSlugs" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.067"/>
+  <testcase name="searchCountsMatchRenderedRuns" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.028"/>
+  <testcase name="taskListsParse" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.007"/>
+  <testcase name="tocPreservesLevelsAndDuplicatesGetStableAnchors" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.001"/>
+  <testcase name="htmlImgBecomesImage" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.013"/>
+  <testcase name="tablesParse" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.002"/>
+  <testcase name="fencedCodeKeepsLanguage" classname="com.byteharvest.mdreader.CommonmarkEngineTest" time="0.009"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

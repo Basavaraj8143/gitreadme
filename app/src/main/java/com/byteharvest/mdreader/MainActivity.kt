@@ -14,7 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toArgb
 import com.byteharvest.mdreader.data.local.ThemeMode
 import com.byteharvest.mdreader.ui.AppNav
-import com.byteharvest.mdreader.ui.theme.GitreadMeTheme
+import com.byteharvest.mdreader.ui.theme.GitreadmeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val mode by settings.theme.collectAsStateWithLifecycle(initialValue = initialTheme)
-            GitreadMeTheme(mode) {
+            GitreadmeTheme(mode) {
                 val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
                 SideEffect {
                     window.setBackgroundDrawable(ColorDrawable(backgroundColor))

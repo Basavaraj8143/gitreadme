@@ -8,6 +8,6 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories { google(); mavenCentral() }
 }
-rootProject.name = "Gitread.me"
+rootProject.name = "Gitreadme"
 include(":app")
 include(":markdown-core")

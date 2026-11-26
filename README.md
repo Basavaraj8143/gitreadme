@@ -1,6 +1,6 @@
 <div align="center">
 
-#  Gitread.me
+#  Gitreadme
 
 **A native Android app for reading Markdown from GitHub repositories or your device, with a focused reader and offline support.**
 
@@ -18,7 +18,7 @@
 
 ## Table of contents
 
-1. [What is Gitread.me?](#what-is-gitreadme)
+1. [What is Gitreadme?](#what-is-gitreadme)
 2. [Who is it for?](#who-is-it-for)
 3. [Feature overview](#feature-overview)
 4. [Quick start](#quick-start)
@@ -38,9 +38,9 @@
 
 ---
 
-## What is Gitread.me?
+## What is Gitreadme?
 
-Gitread.me is an Android app that makes reading documentation on GitHub pleasant on a phone. Documentation lives in Markdown files across thousands of repositories, but the mobile browser experience is often cramped and requires a connection. Gitread.me fixes both:
+Gitreadme is an Android app that makes reading documentation on GitHub pleasant on a phone. Documentation lives in Markdown files across thousands of repositories, but the mobile browser experience is often cramped and requires a connection. Gitreadme fixes both:
 
 - It **browses a repository's Markdown files** the way a file manager would.
 - It **renders them in a clean, customizable reader** with search, a table of contents, bookmarks, and PDF export.
@@ -49,7 +49,7 @@ Gitread.me is an Android app that makes reading documentation on GitHub pleasant
 
 ```mermaid
 flowchart LR
-    A[GitHub repo<br/>or local .md file] --> B[Gitread.me]
+    A[GitHub repo<br/>or local .md file] --> B[Gitreadme]
     B --> C[Browse files]
     B --> D[Read and search]
     B --> E[Bookmark]
@@ -59,7 +59,7 @@ flowchart LR
 
 ## Who is it for?
 
-| You are... | Gitread.me helps you... |
+| You are... | Gitreadme helps you... |
 |---|---|
 | A student or learner | Read course notes and tutorials kept in GitHub repos, even without internet |
 | A developer | Skim project docs and READMEs on the go |
@@ -215,7 +215,7 @@ In **Settings → Manage saved repositories**, each repository's three-dot menu 
 ### Opening a local Markdown file
 
 1. On the home screen, choose the local file option.
-2. Pick a `.md` or `.markdown` file in Android's document picker, or choose Gitread.me from another app's **Open with / Share** menu.
+2. Pick a `.md` or `.markdown` file in Android's document picker, or choose Gitreadme from another app's **Open with / Share** menu.
 3. The app copies it to its private storage (`files/local_docs/`) and opens it.
 
 Local files do not appear in GitHub reading history and cannot be bookmarked.
@@ -226,7 +226,7 @@ Local files do not appear in GitHub reading history and cannot be bookmarked.
    - **Contents: read-only**
    - **Metadata: read-only**
    - Restricted to only the repositories you need.
-2. In Gitread.me, go to **Settings** and submit the token.
+2. In Gitreadme, go to **Settings** and submit the token.
 3. The app validates it with GitHub and stores it encrypted.
 4. Your private repositories now appear under **Your repos**.
 
@@ -535,7 +535,7 @@ The app does **not** enable destructive migration fallback.
 ```mermaid
 flowchart LR
     subgraph Device[Your device]
-        APP[Gitread.me]
+        APP[Gitreadme]
         KS[Android Keystore<br/>AES key]
         ENC[Encrypted token]
         DB[(Local database)]

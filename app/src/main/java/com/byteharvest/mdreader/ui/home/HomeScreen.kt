@@ -322,7 +322,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gitread.me", fontWeight = FontWeight.Bold) },
+                title = { Text("Gitreadme", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = onOpenGitHub) {
                         Icon(
